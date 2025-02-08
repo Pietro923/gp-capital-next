@@ -55,7 +55,7 @@ const LoanSimulator: React.FC = () => {
     
     setCuotaMensual(cuotaFija);
     
-    let nuevasCuotas: CuotaSimulada[] = [];
+    const nuevasCuotas: CuotaSimulada[] = [];
     let capitalPendiente = monto;
     let fecha = new Date();
     
