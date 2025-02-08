@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-export const Caja = () => {
+export default function CashRegister() {
   const [cajaMovements] = useState([
     { 
       id: 1, 
@@ -137,6 +137,4 @@ export const Caja = () => {
       </Card>
     </div>
   );
-};
-
-export default Caja
+}

@@ -21,8 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Calendar } from "lucide-react";
 
-// Compras Component
-export const Compras = () => {
+export default function Purchases() {
   const [purchases] = useState([
     { 
       id: 1, 
@@ -119,5 +118,3 @@ export const Compras = () => {
     </div>
   );
 };
-
-export default Compras;
