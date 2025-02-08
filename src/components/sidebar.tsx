@@ -19,7 +19,7 @@ import {
   CreditCard,
   ShoppingCart,
   DollarSign,
-  LucideIcon
+  LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 

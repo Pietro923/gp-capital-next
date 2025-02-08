@@ -1,4 +1,4 @@
-"use client"; // Indica que este es un componente del lado del cliente
+"use client";
 import React, { useState, useEffect } from 'react';
 import {
   Table,
@@ -15,26 +15,19 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Search, FileText, UserX, UserCheck, Download } from "lucide-react";
-import NewClientForm from '@/components/NewClientForm'; // Importa el formulario de nuevo cliente
+import { Search, Download } from "lucide-react";
+import { supabase } from '@/utils/supabase/server';
 
 interface Cliente {
-  id: number;
+  id: string;
   nombre: string;
+  apellido: string;
+  correo: string | null;
+  telefono: string | null;
+  direccion: string | null;
   dni: string;
-  empresa: string;
-  producto: string;
-  monto: number;
-  estado: 'Aprobado' | 'Rechazado' | 'Pendiente';
-  fechaSolicitud: string;
+  created_at: string;
 }
 
 interface ExcelRow {
@@ -43,114 +36,56 @@ interface ExcelRow {
 
 const ClientList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterEmpresa, setFilterEmpresa] = useState('todas');
-  const [filterEstado, setFilterEstado] = useState('todos');
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [empresas, setEmpresas] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Datos de ejemplo
   useEffect(() => {
-    const exampleData: Cliente[] = [
-      {
-        id: 1,
-        nombre: "Juan Pérez",
-        dni: "12345678",
-        empresa: "Pueble",
-        producto: "Préstamo Personal",
-        monto: 100000,
-        estado: "Aprobado",
-        fechaSolicitud: "2023-10-01",
-      },
-      {
-        id: 2,
-        nombre: "María Gómez",
-        dni: "87654321",
-        empresa: "Semage",
-        producto: "Préstamo Hipotecario",
-        monto: 500000,
-        estado: "Pendiente",
-        fechaSolicitud: "2023-09-15",
-      },
-      {
-        id: 3,
-        nombre: "Carlos López",
-        dni: "45678912",
-        empresa: "Magi",
-        producto: "Préstamo Automotor",
-        monto: 300000,
-        estado: "Rechazado",
-        fechaSolicitud: "2023-08-20",
-      },
-      {
-        id: 4,
-        nombre: "Ana Torres",
-        dni: "32165498",
-        empresa: "ub.ti",
-        producto: "Préstamo Personal",
-        monto: 150000,
-        estado: "Aprobado",
-        fechaSolicitud: "2023-10-10",
-      },
-    ];
+    const fetchClientes = async () => {
+      setIsLoading(true);
+      setError(null);
 
-    setClientes(exampleData);
+      try {
+        const { data, error } = await supabase
+          .from('clientes')
+          .select('*')
+          .order('created_at', { ascending: false });
 
-    // Obtener lista única de empresas para el filtro
-    const uniqueEmpresas = [...new Set(exampleData.map((cliente) => cliente.empresa))].filter(Boolean);
-    setEmpresas(uniqueEmpresas);
+        if (error) {
+          throw error;
+        }
 
-    setIsLoading(false);
+        setClientes(data || []);
+      } catch (error) {
+        console.error('Error fetching clientes:', error);
+        setError('Error al cargar los clientes');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchClientes();
   }, []);
 
-  const getEstadoColor = (estado: string) => {
-    switch (estado.toLowerCase()) {
-      case 'aprobado':
-        return 'text-green-600 bg-green-100';
-      case 'rechazado':
-        return 'text-red-600 bg-red-100';
-      default:
-        return 'text-yellow-600 bg-yellow-100';
-    }
-  };
-
-  const getEstadoIcon = (estado: string) => {
-    switch (estado.toLowerCase()) {
-      case 'aprobado':
-        return <UserCheck className="w-4 h-4" />;
-      case 'rechazado':
-        return <UserX className="w-4 h-4" />;
-      default:
-        return <FileText className="w-4 h-4" />;
-    }
-  };
-
   const filteredClientes = clientes
-    .filter(cliente => 
+    .filter(cliente =>
       cliente.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      cliente.apellido.toLowerCase().includes(searchTerm.toLowerCase()) ||
       cliente.dni.includes(searchTerm)
-    )
-    .filter(cliente => 
-      filterEmpresa === 'todas' || cliente.empresa === filterEmpresa
-    )
-    .filter(cliente => 
-      filterEstado === 'todos' || cliente.estado.toLowerCase() === filterEstado
     );
 
   const exportToExcel = () => {
     const excelData: ExcelRow[] = filteredClientes.map(cliente => ({
       'Nombre': cliente.nombre,
+      'Apellido': cliente.apellido,
+      'Correo': cliente.correo || '',
+      'Teléfono': cliente.telefono || '',
+      'Dirección': cliente.direccion || '',
       'DNI': cliente.dni,
-      'Empresa': cliente.empresa,
-      'Producto': cliente.producto,
-      'Monto': cliente.monto,
-      'Estado': cliente.estado,
-      'Fecha Solicitud': new Date(cliente.fechaSolicitud).toLocaleDateString('es-AR')
+      'Fecha de Registro': new Date(cliente.created_at).toLocaleDateString('es-AR')
     }));
 
     let csvContent = '\ufeff';
-    
     const headers = Object.keys(excelData[0]);
     csvContent += headers.join(';') + '\n';
 
@@ -189,7 +124,6 @@ const ClientList: React.FC = () => {
             <Button variant="outline" onClick={exportToExcel}>
               <Download className="mr-2 h-4 w-4" /> Exportar
             </Button>
-            <NewClientForm onClientAdded={() => window.location.reload()} />
           </div>
         </CardHeader>
         <CardContent>
@@ -198,74 +132,37 @@ const ClientList: React.FC = () => {
               <div className="flex-1 relative">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
                 <Input
-                  placeholder="Buscar por nombre o DNI..."
+                  placeholder="Buscar por nombre, apellido o DNI..."
                   className="pl-8"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
-              <Select
-                value={filterEmpresa}
-                onValueChange={setFilterEmpresa}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Empresa" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todas">Todas las empresas</SelectItem>
-                  {empresas.map((empresa) => (
-                    <SelectItem key={empresa} value={empresa}>
-                      {empresa}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={filterEstado}
-                onValueChange={setFilterEstado}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Estado" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos los estados</SelectItem>
-                  <SelectItem value="aprobado">Aprobado</SelectItem>
-                  <SelectItem value="pendiente">Pendiente</SelectItem>
-                  <SelectItem value="rechazado">Rechazado</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Cliente</TableHead>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead>Apellido</TableHead>
+                    <TableHead>Correo</TableHead>
+                    <TableHead>Teléfono</TableHead>
+                    <TableHead>Dirección</TableHead>
                     <TableHead>DNI</TableHead>
-                    <TableHead>Empresa</TableHead>
-                    <TableHead>Producto</TableHead>
-                    <TableHead className="text-right">Monto</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Fecha</TableHead>
+                    <TableHead>Fecha de Registro</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredClientes.map((cliente) => (
                     <TableRow key={cliente.id} className="cursor-pointer hover:bg-slate-50">
                       <TableCell className="font-medium">{cliente.nombre}</TableCell>
+                      <TableCell>{cliente.apellido}</TableCell>
+                      <TableCell>{cliente.correo}</TableCell>
+                      <TableCell>{cliente.telefono}</TableCell>
+                      <TableCell>{cliente.direccion}</TableCell>
                       <TableCell>{cliente.dni}</TableCell>
-                      <TableCell>{cliente.empresa}</TableCell>
-                      <TableCell>{cliente.producto}</TableCell>
-                      <TableCell className="text-right">
-                        ${cliente.monto.toLocaleString('es-AR')}
-                      </TableCell>
                       <TableCell>
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getEstadoColor(cliente.estado)}`}>
-                          {getEstadoIcon(cliente.estado)}
-                          <span className="ml-1 capitalize">{cliente.estado}</span>
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        {new Date(cliente.fechaSolicitud).toLocaleDateString('es-AR')}
+                        {new Date(cliente.created_at).toLocaleDateString('es-AR')}
                       </TableCell>
                     </TableRow>
                   ))}
