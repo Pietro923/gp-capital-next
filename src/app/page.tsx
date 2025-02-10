@@ -1,25 +1,28 @@
-// app/page.tsx
-'use client'
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+"use client";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/utils/supabase/client";
 
 export default function Login() {
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const router = useRouter()
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const router = useRouter();
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (username === 'admin' && password === 'admin') {
-      // Almacenar información de inicio de sesión (en un escenario real, usarías tokens)
-      localStorage.setItem('isLoggedIn', 'true')
-      router.push('/dashboard') // Redirigir a la página de dashboard
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      setError(error.message);
     } else {
-      setError('Credenciales incorrectas')
+      router.push("/dashboard"); // Redirigir al dashboard
     }
-  }
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -28,29 +31,29 @@ export default function Login() {
         {error && <p className="text-red-500 mb-4 text-center">{error}</p>}
         <form onSubmit={handleLogin}>
           <div className="mb-4">
-            <label htmlFor="username" className="block mb-2">Usuario</label>
-            <input 
-              type="text" 
-              id="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+            <label htmlFor="email" className="block mb-2">Correo</label>
+            <input
+              type="email"
+              id="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="w-full px-3 py-2 border rounded"
-              required 
+              required
             />
           </div>
           <div className="mb-4">
             <label htmlFor="password" className="block mb-2">Contraseña</label>
-            <input 
-              type="password" 
+            <input
+              type="password"
               id="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full px-3 py-2 border rounded"
-              required 
+              required
             />
           </div>
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             className="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
           >
             Iniciar Sesión
@@ -58,5 +61,5 @@ export default function Login() {
         </form>
       </div>
     </div>
-  )
+  );
 }

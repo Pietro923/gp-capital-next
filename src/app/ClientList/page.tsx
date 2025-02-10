@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, Download } from "lucide-react";
-import { supabase } from '@/utils/supabase/server';
+import { supabase } from '@/utils/supabase/client';
 
 interface Cliente {
   id: string;
