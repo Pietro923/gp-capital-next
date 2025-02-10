@@ -4,6 +4,7 @@ import { supabase } from "@/utils/supabase/client";
 import Sidebar from "@/components/sidebar";
 import { Geist, Geist_Mono } from "next/font/google";
 import "@/styles/globals.css";
+import { User } from '@supabase/supabase-js';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -20,7 +21,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
     // Initial user fetch
