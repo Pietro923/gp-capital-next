@@ -1,42 +1,63 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/utils/supabase/client";
+import Sidebar from "@/components/sidebar";
+import { useRouter } from "next/navigation";
 
 export default function Dashboard() {
+  const [user, setUser] = useState<any>(null);
   const router = useRouter();
-  const [user, setUser] = useState<{ email: string | null } | null>(null);
-
+  
   useEffect(() => {
     const fetchUser = async () => {
-      const { data, error } = await supabase.auth.getUser();
-      if (error || !data.user) {
-        router.push("/"); // Redirigir al login si no está autenticado
-      } else {
-        setUser({ email: data.user.email ?? null });
-      }
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
     };
 
     fetchUser();
-  }, [router]);
+  }, []);
 
+  if (!user) {
+    return <div>Loading...</div>;
+  }
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/");
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Error logging out:', error);
+      }
+      router.push("/"); // Redirect to login page
+    } catch (error) {
+      console.error('Unexpected error during logout:', error);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 p-8">
-      <div className="bg-white p-6 rounded shadow-md">
-        <h1 className="text-3xl mb-4">Panel de Administración</h1>
-        <p>¡Bienvenido, {user?.email || "Usuario"}!</p>
+    <div className="flex">
+      <Sidebar />
+      <main className="w-full min-h-screen p-8 bg-gray-50">
+        <h1 className="text-3xl font-bold text-gray-800 mb-8">Dashboard</h1>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-xl font-semibold text-gray-700">Ingresos Mensuales</h2>
+            <p className="text-2xl font-bold text-blue-600">$25,000</p>
+          </div>
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-xl font-semibold text-gray-700">Gastos Mensuales</h2>
+            <p className="text-2xl font-bold text-red-600">$15,000</p>
+          </div>
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-xl font-semibold text-gray-700">Beneficio Neto</h2>
+            <p className="text-2xl font-bold text-green-600">$10,000</p>
+          </div>
+        </div>
         <button
           onClick={handleLogout}
           className="mt-4 bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
         >
           Cerrar Sesión
         </button>
-      </div>
+      </main>
     </div>
   );
 }

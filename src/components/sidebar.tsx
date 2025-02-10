@@ -20,12 +20,13 @@ import {
   ShoppingCart,
   DollarSign,
   LucideIcon,
+  SquareActivity
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Definición de tipos
 interface Section {
-  id: "clientes" | "cuotas" | "simulador" | "analisis" | "proveedores" | "facturacion" | "compras" | "caja";
+  id: "clientes" | "cuotas" | "simulador" | "analisis" | "proveedores" | "facturacion" | "compras" | "caja" | "dashboard";
   name: string;
   icon: LucideIcon;
   href: string;
@@ -33,6 +34,13 @@ interface Section {
 }
 
 const sections: Section[] = [
+  { 
+    id: "dashboard", 
+    name: "Dashboard", 
+    icon: SquareActivity, 
+    href: "/dashboard",
+    description: "Dashboard con una recopilación de información."
+  },
   { 
     id: "clientes", 
     name: "Listado de Clientes", 
