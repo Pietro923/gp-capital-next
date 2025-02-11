@@ -1,12 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
 import { supabase } from "@/utils/supabase/client";
-import { useRouter } from "next/navigation";
 import { User } from '@supabase/supabase-js';
 
 export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null);
-  const router = useRouter();
   
   useEffect(() => {
     const fetchUser = async () => {
