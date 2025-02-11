@@ -44,7 +44,7 @@ const sections = [
 const Sidebar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const router = useRouter();
 
   if (!user) return null; // Ocultar sidebar si no hay usuario autenticado

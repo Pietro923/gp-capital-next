@@ -19,17 +19,6 @@ export default function Dashboard() {
   if (!user) {
     return <div>Loading...</div>;
   }
-  const handleLogout = async () => {
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error('Error logging out:', error);
-      }
-      router.push("/"); // Redirect to login page
-    } catch (error) {
-      console.error('Unexpected error during logout:', error);
-    }
-  };
 
   return (
     <div className="flex">
