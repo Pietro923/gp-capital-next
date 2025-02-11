@@ -1,10 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
-import { supabase } from "@/utils/supabase/client";
 import Sidebar from "@/components/sidebar";
 import { Geist, Geist_Mono } from "next/font/google";
 import "@/styles/globals.css";
-import { User } from '@supabase/supabase-js';
+import { AuthProvider } from "@/context/AuthContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -16,44 +14,24 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
-  const [user, setUser] = useState<User | null>(null);
-
-  useEffect(() => {
-    // Initial user fetch
-    const fetchUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-    };
-    fetchUser();
-
-    // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setUser(session?.user ?? null);
-      }
-    );
-
-    // Cleanup subscription
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <div className="flex">
-          {user && <Sidebar />}
-          <main className={`${user ? 'md:ml-64' : ''} w-full min-h-screen p-4`}>
-            {children}
-          </main>
-        </div>
-      </body>
-    </html>
+    <AuthProvider>
+      <html lang="en">
+        <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+          <div className="flex min-h-screen">
+            {/* Sidebar fijo a la izquierda */}
+            <div className="fixed inset-y-0 left-0 w-64">
+              <Sidebar />
+            </div>
+            
+            {/* Contenido principal con margen izquierdo para evitar superposición */}
+            <main className="flex-1 ml-64 p-8">
+              {children}
+            </main>
+          </div>
+        </body>
+      </html>
+    </AuthProvider>
   );
 }

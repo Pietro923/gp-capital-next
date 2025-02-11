@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
 import { supabase } from "@/utils/supabase/client";
-import Sidebar from "@/components/sidebar";
 import { useRouter } from "next/navigation";
 import { User } from '@supabase/supabase-js';
 
@@ -34,7 +33,6 @@ export default function Dashboard() {
 
   return (
     <div className="flex">
-      <Sidebar />
       <main className="w-full min-h-screen p-8 bg-gray-50">
         <h1 className="text-3xl font-bold text-gray-800 mb-8">Dashboard</h1>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -52,10 +50,9 @@ export default function Dashboard() {
           </div>
         </div>
         <button
-          onClick={handleLogout}
-          className="mt-4 bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+        className="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
         >
-          Cerrar Sesión
+          Generar Reporte
         </button>
       </main>
     </div>
