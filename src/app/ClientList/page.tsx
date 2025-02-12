@@ -155,7 +155,8 @@ const ClientList: React.FC = () => {
       'Teléfono': cliente.telefono || '',
       'Dirección': cliente.direccion || '',
       'DNI': cliente.dni,
-      'Fecha de Registro': new Date(cliente.created_at).toLocaleDateString('es-AR')
+      'Fecha de Registro': new Date(cliente.created_at).toLocaleDateString('es-AR'),
+      'Empresa': cliente.empresa || '',
     }));
 
     let csvContent = '\ufeff';
@@ -331,6 +332,7 @@ const ClientList: React.FC = () => {
                     <TableHead>Teléfono</TableHead>
                     <TableHead>Dirección</TableHead>
                     <TableHead>DNI</TableHead>
+                    <TableHead>Empresa</TableHead>
                     <TableHead>Fecha de Registro</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -343,6 +345,7 @@ const ClientList: React.FC = () => {
                       <TableCell>{cliente.telefono}</TableCell>
                       <TableCell>{cliente.direccion}</TableCell>
                       <TableCell>{cliente.dni}</TableCell>
+                      <TableCell>{cliente.empresa}</TableCell>
                       <TableCell>
                         {new Date(cliente.created_at).toLocaleDateString('es-AR')}
                       </TableCell>

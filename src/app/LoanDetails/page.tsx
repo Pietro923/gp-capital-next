@@ -1,4 +1,5 @@
-"use client"; // Indica que este es un componente del lado del cliente
+"use client";
+
 import React, { useState, useEffect } from 'react';
 import {
   Card,
@@ -18,37 +19,51 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, Download, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { supabase } from '@/utils/supabase/client';
 
-interface Cuota {
-  id: number;
-  prestamo_id: number;
-  numero_cuota: number;
-  fecha_vencimiento: string;
-  monto_total: number;
-  monto_pagado: number;
-  estado: 'pagada' | 'pendiente' | 'vencida';
-  fecha_pago: string | null;
+// Interfaces actualizadas según el esquema de Supabase
+interface Cliente {
+  id: string; // UUID
+  nombre: string;
+  apellido: string;
+  dni: string;
 }
 
-interface PrestamoConCuotas {
-  id: number;
-  cliente_nombre: string;
-  producto: string;
+interface Cuota {
+  id: string; // UUID
+  prestamo_id: string; // UUID
+  numero_cuota: number;
+  monto: number;
+  fecha_vencimiento: string;
+  fecha_pago: string | null;
+  estado: 'PENDIENTE' | 'PAGADO' | 'VENCIDO';
+}
+
+interface Prestamo {
+  id: string; // UUID
+  cliente_id: string; // UUID
   monto_total: number;
+  tasa_interes: number;
   cantidad_cuotas: number;
-  cuotas_pagadas: number;
+  estado: 'ACTIVO' | 'CANCELADO' | 'COMPLETADO';
+  fecha_inicio: string;
+}
+
+interface PrestamoConCuotas extends Prestamo {
+  cliente: Cliente;
   cuotas: Cuota[];
+  cuotas_pagadas: number;
 }
 
 interface ExcelRow {
   Cliente: string;
-  Producto: string;
+  DNI: string;
   'Número de Cuota': number;
   'Fecha Vencimiento': string;
-  'Monto Total': number;
-  'Monto Pagado': number;
-  Estado: 'pagada' | 'pendiente' | 'vencida';
+  'Monto': number;
+  'Estado': string;
   'Fecha Pago': string;
+  'Tasa Interés': number;
 }
 
 const LoanDetails = () => {
@@ -56,98 +71,31 @@ const LoanDetails = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [expandedPrestamos, setExpandedPrestamos] = useState<number[]>([]);
+  const [expandedPrestamos, setExpandedPrestamos] = useState<string[]>([]);
 
-  // Datos de ejemplo
   useEffect(() => {
-    const fetchData = () => {
+    const fetchData = async () => {
       try {
-        const exampleData: PrestamoConCuotas[] = [
-          {
-            id: 1,
-            cliente_nombre: "Juan Pérez",
-            producto: "Préstamo Personal",
-            monto_total: 100000,
-            cantidad_cuotas: 12,
-            cuotas_pagadas: 6,
-            cuotas: [
-              {
-                id: 1,
-                prestamo_id: 1,
-                numero_cuota: 1,
-                fecha_vencimiento: "2023-10-01",
-                monto_total: 8333,
-                monto_pagado: 8333,
-                estado: 'pagada',
-                fecha_pago: "2023-10-01",
-              },
-              {
-                id: 2,
-                prestamo_id: 1,
-                numero_cuota: 2,
-                fecha_vencimiento: "2023-11-01",
-                monto_total: 8333,
-                monto_pagado: 8333,
-                estado: 'pagada',
-                fecha_pago: "2023-11-01",
-              },
-              {
-                id: 3,
-                prestamo_id: 1,
-                numero_cuota: 3,
-                fecha_vencimiento: "2023-12-01",
-                monto_total: 8333,
-                monto_pagado: 0,
-                estado: 'vencida',
-                fecha_pago: null,
-              },
-            ],
-          },
-          {
-            id: 2,
-            cliente_nombre: "María Gómez",
-            producto: "Préstamo Hipotecario",
-            monto_total: 500000,
-            cantidad_cuotas: 24,
-            cuotas_pagadas: 12,
-            cuotas: [
-              {
-                id: 4,
-                prestamo_id: 2,
-                numero_cuota: 1,
-                fecha_vencimiento: "2023-09-01",
-                monto_total: 20833,
-                monto_pagado: 20833,
-                estado: 'pagada',
-                fecha_pago: "2023-09-01",
-              },
-              {
-                id: 5,
-                prestamo_id: 2,
-                numero_cuota: 2,
-                fecha_vencimiento: "2023-10-01",
-                monto_total: 20833,
-                monto_pagado: 20833,
-                estado: 'pagada',
-                fecha_pago: "2023-10-01",
-              },
-              {
-                id: 6,
-                prestamo_id: 2,
-                numero_cuota: 3,
-                fecha_vencimiento: "2023-11-01",
-                monto_total: 20833,
-                monto_pagado: 0,
-                estado: 'pendiente',
-                fecha_pago: null,
-              },
-            ],
-          },
-        ];
+        // TODO: Reemplazar con tu cliente de Supabase
+        const { data: prestamosData, error: prestamosError } = await supabase
+          .from('prestamos')
+          .select(`
+            *,
+            cliente:clientes(*),
+            cuotas(*)
+          `)
+          .order('fecha_inicio', { ascending: false });
 
-        setPrestamos(exampleData);
+        if (prestamosError) throw prestamosError;
+
+        const prestamosProcessed: PrestamoConCuotas[] = prestamosData.map(prestamo => ({
+          ...prestamo,
+          cuotas_pagadas: prestamo.cuotas.filter((c: { estado: string; }) => c.estado === 'PAGADO').length
+        }));
+
+        setPrestamos(prestamosProcessed);
       } catch (err) {
-        console.error('Error al cargar datos de ejemplo:', err);
+        console.error('Error al cargar datos:', err);
         setError('Error al cargar los datos de préstamos');
       } finally {
         setLoading(false);
@@ -159,9 +107,9 @@ const LoanDetails = () => {
 
   const getEstadoColor = (estado: Cuota['estado']) => {
     switch (estado) {
-      case 'pagada':
+      case 'PAGADO':
         return 'text-green-600 bg-green-100';
-      case 'vencida':
+      case 'VENCIDO':
         return 'text-red-600 bg-red-100';
       default:
         return 'text-yellow-600 bg-yellow-100';
@@ -169,27 +117,28 @@ const LoanDetails = () => {
   };
 
   const filteredPrestamos = prestamos.filter(prestamo =>
-    prestamo.cliente_nombre.toLowerCase().includes(searchTerm.toLowerCase())
+    `${prestamo.cliente.nombre} ${prestamo.cliente.apellido}`
+      .toLowerCase()
+      .includes(searchTerm.toLowerCase())
   );
 
   const exportToExcel = () => {
     const excelData: ExcelRow[] = filteredPrestamos.flatMap(prestamo => 
       prestamo.cuotas.map(cuota => ({
-        'Cliente': prestamo.cliente_nombre,
-        'Producto': prestamo.producto,
+        'Cliente': `${prestamo.cliente.nombre} ${prestamo.cliente.apellido}`,
+        'DNI': prestamo.cliente.dni,
         'Número de Cuota': cuota.numero_cuota,
         'Fecha Vencimiento': new Date(cuota.fecha_vencimiento).toLocaleDateString('es-AR'),
-        'Monto Total': cuota.monto_total,
-        'Monto Pagado': cuota.monto_pagado,
+        'Monto': cuota.monto,
         'Estado': cuota.estado,
-        'Fecha Pago': cuota.fecha_pago ? new Date(cuota.fecha_pago).toLocaleDateString('es-AR') : ''
+        'Fecha Pago': cuota.fecha_pago ? new Date(cuota.fecha_pago).toLocaleDateString('es-AR') : '',
+        'Tasa Interés': prestamo.tasa_interes
       }))
     );
 
     let csvContent = '\ufeff';
     const headers = Object.keys(excelData[0]) as (keyof ExcelRow)[];
     csvContent += headers.join(';') + '\n';
-
     excelData.forEach(row => {
       const values = headers.map(header => {
         const value = row[header];
@@ -202,7 +151,7 @@ const LoanDetails = () => {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `cuotas_${new Date().toISOString().split('T')[0]}.xls`);
+    link.setAttribute('download', `prestamos_${new Date().toISOString().split('T')[0]}.xls`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -221,7 +170,7 @@ const LoanDetails = () => {
     );
   }
 
-  const toggleExpanded = (prestamoId: number) => {
+  const toggleExpanded = (prestamoId: string) => {
     setExpandedPrestamos(prev => 
       prev.includes(prestamoId) 
         ? prev.filter(id => id !== prestamoId)
@@ -249,8 +198,7 @@ const LoanDetails = () => {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-
-            {filteredPrestamos.some(p => p.cuotas.some(c => c.estado === 'vencida')) && (
+            {filteredPrestamos.some(p => p.cuotas.some(c => c.estado === 'VENCIDO')) && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>
@@ -258,14 +206,13 @@ const LoanDetails = () => {
                 </AlertDescription>
               </Alert>
             )}
-
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead></TableHead>
                     <TableHead>Cliente</TableHead>
-                    <TableHead>Producto</TableHead>
+                    <TableHead>DNI</TableHead>
                     <TableHead className="text-right">Monto Total</TableHead>
                     <TableHead className="text-right">Cuotas Pagadas</TableHead>
                     <TableHead>Progreso</TableHead>
@@ -283,8 +230,10 @@ const LoanDetails = () => {
                             <ChevronDown className="h-4 w-4" /> : 
                             <ChevronRight className="h-4 w-4" />}
                         </TableCell>
-                        <TableCell className="font-medium">{prestamo.cliente_nombre}</TableCell>
-                        <TableCell>{prestamo.producto}</TableCell>
+                        <TableCell className="font-medium">
+                          {`${prestamo.cliente.nombre} ${prestamo.cliente.apellido}`}
+                        </TableCell>
+                        <TableCell>{prestamo.cliente.dni}</TableCell>
                         <TableCell className="text-right">
                           ${prestamo.monto_total.toLocaleString('es-AR')}
                         </TableCell>
@@ -307,14 +256,16 @@ const LoanDetails = () => {
                             Cuota {cuota.numero_cuota}
                           </TableCell>
                           <TableCell className="text-right text-sm">
-                            ${cuota.monto_total.toLocaleString('es-AR')}
+                            ${cuota.monto.toLocaleString('es-AR')}
                           </TableCell>
                           <TableCell className="text-right text-sm">
-                            ${cuota.monto_pagado.toLocaleString('es-AR')}
+                            {cuota.fecha_pago ? 
+                              new Date(cuota.fecha_pago).toLocaleDateString('es-AR') : 
+                              '-'}
                           </TableCell>
                           <TableCell>
                             <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getEstadoColor(cuota.estado)}`}>
-                              {cuota.estado.toUpperCase()}
+                              {cuota.estado}
                             </span>
                           </TableCell>
                         </TableRow>

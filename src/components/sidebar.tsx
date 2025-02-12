@@ -34,7 +34,7 @@ const sections = [
   { id: "cuotas", name: "Detalle de Cuotas", icon: ClipboardList, href: "/LoanDetails" },
   { id: "recordatorio", name: "Envio de Recordatorios", icon: Mail, href: "/Recordatorio" },
   { id: "simulador", name: "Simulador de Préstamos", icon: Calculator, href: "/LoanSimulator" },
-  { id: "analisis", name: "Análisis de Clientes", icon: UserCheck, href: "/ClientAnalysis" },
+  { id: "analisis", name: "Análisis de Posibles Clientes", icon: UserCheck, href: "/ClientAnalysis" },
   { id: "proveedores", name: "Proveedores", icon: Building2, href: "/Providers" },
   { id: "facturacion", name: "Facturación AFIP", icon: Receipt, href: "/Billing" },
   { id: "compras", name: "Compras", icon: ShoppingCart, href: "/Purchases" },
