@@ -59,9 +59,9 @@ const Providers: React.FC = () => {
   const [Providers, setProviders] = useState<Provider[]>([]);
   const [formData, setFormData] = useState<NewProviderForm>(initialFormState);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [, setIsLoading] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
