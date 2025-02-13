@@ -1,5 +1,5 @@
 "use client"
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Receipt, Trash2 } from "lucide-react";
+import { supabase } from '@/utils/supabase/client';
 
 interface InvoiceItem {
   description: string;
@@ -28,7 +29,33 @@ interface InvoiceItem {
   total: number;
 }
 
+interface Cliente {
+  id: string;
+  nombre: string;
+  apellido: string;
+  direccion: string;
+  dni: string;
+}
+
+interface TipoIva {
+  id: string;
+  nombre: string;
+}
+
+interface FormaPago {
+  id: string;
+  nombre: string;
+}
+
+interface FacturaFormData {
+  tipoFactura: string;
+  clienteId: string;
+  tipoIvaId: string;
+  formaPagoId: string;
+}
+
 const Billing: React.FC = () => {
+  // Estados para los items de la factura
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [newItem, setNewItem] = useState<InvoiceItem>({
     description: '',
@@ -37,6 +64,53 @@ const Billing: React.FC = () => {
     total: 0
   });
 
+  // Estados para los datos de la factura
+  const [formData, setFormData] = useState<FacturaFormData>({
+    tipoFactura: '',
+    clienteId: '',
+    tipoIvaId: '',
+    formaPagoId: '',
+  });
+
+  // Estados para los datos externos
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [tiposIva, setTiposIva] = useState<TipoIva[]>([]);
+  const [formasPago, setFormasPago] = useState<FormaPago[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Cargar datos necesarios
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Cargar clientes
+        const { data: clientesData } = await supabase
+          .from('clientes')
+          .select('*');
+        if (clientesData) setClientes(clientesData);
+
+        // Cargar tipos de IVA
+        const { data: tiposIvaData } = await supabase
+          .from('tipos_iva')
+          .select('*');
+        if (tiposIvaData) setTiposIva(tiposIvaData);
+
+        // Cargar formas de pago
+        const { data: formasPagoData } = await supabase
+          .from('formas_pago')
+          .select('*');
+        if (formasPagoData) setFormasPago(formasPagoData);
+
+      } catch (error) {
+        console.error('Error cargando datos:', error);
+        setError('Error al cargar los datos necesarios');
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // Manejar items de la factura
   const handleAddItem = () => {
     if (newItem.description && newItem.quantity && newItem.unitPrice) {
       setItems([...items, {
@@ -58,6 +132,81 @@ const Billing: React.FC = () => {
 
   const total = items.reduce((sum, item) => sum + item.total, 0);
 
+  // Manejar cambios en los datos de la factura
+  const handleFacturaDataChange = (field: keyof FacturaFormData, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  // Generar factura
+  // Generar factura
+  const handleGenerarFactura = async () => {
+    if (!formData.tipoFactura || !formData.clienteId || !formData.tipoIvaId || !formData.formaPagoId || items.length === 0) {
+      setError('Por favor complete todos los campos necesarios');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Insertar la factura principal
+      const { data: nuevaFactura, error: facturaError } = await supabase
+        .from('facturacion')
+        .insert([
+          {
+            tipo_factura: formData.tipoFactura,
+            cliente_id: formData.clienteId,
+            tipo_iva_id: formData.tipoIvaId,
+            forma_pago_id: formData.formaPagoId,
+            total_neto: total / 1.21, // Asumiendo IVA 21%
+            iva: (total / 1.21) * 0.21,
+            total_factura: total
+          }
+        ])
+        .select()
+        .single();
+
+      if (facturaError) throw facturaError;
+      if (!nuevaFactura) throw new Error('No se pudo crear la factura');
+
+      // Insertar los detalles de la factura
+      const detallesPromises = items.map(item => 
+        supabase
+          .from('detalles_factura')
+          .insert([
+            {
+              factura_id: nuevaFactura.id,
+              descripcion: item.description,
+              cantidad: item.quantity,
+              precio_unitario: item.unitPrice,
+              subtotal: item.total
+            }
+          ])
+      );
+
+      await Promise.all(detallesPromises);
+
+      // Limpiar el formulario
+      setItems([]);
+      setFormData({
+        tipoFactura: '',
+        clienteId: '',
+        tipoIvaId: '',
+        formaPagoId: '',
+      });
+
+      alert('Factura generada exitosamente');
+
+    } catch (error) {
+      console.error('Error generando factura:', error);
+      setError('Error al generar la factura');
+    } finally {
+      setIsLoading(false);
+    }
+  };
   return (
     <div className="space-y-6">
       <Card>
@@ -76,7 +225,7 @@ const Billing: React.FC = () => {
             <div className="space-y-4">
               <div>
                 <Label>Tipo de Factura</Label>
-                <Select>
+                <Select onValueChange={(value) => handleFacturaDataChange('tipoFactura', value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccionar tipo" />
                   </SelectTrigger>
@@ -89,52 +238,54 @@ const Billing: React.FC = () => {
               
               <div>
                 <Label>Cliente</Label>
-                <Input placeholder="Nombre o Razón Social" />
-              </div>
-
-              <div>
-                <Label>CUIT</Label>
-                <Input placeholder="XX-XXXXXXXX-X" />
+                <Select onValueChange={(value) => handleFacturaDataChange('clienteId', value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar cliente" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clientes.map((cliente) => (
+                      <SelectItem key={cliente.id} value={cliente.id}>
+                        {cliente.nombre} {cliente.apellido} - {cliente.dni}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-
             {/* Datos adicionales */}
             <div className="space-y-4">
               <div>
                 <Label>Condición IVA</Label>
-                <Select>
+                <Select onValueChange={(value) => handleFacturaDataChange('tipoIvaId', value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccionar condición" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ri">Responsable Inscripto</SelectItem>
-                    <SelectItem value="mt">Monotributista</SelectItem>
-                    <SelectItem value="cf">Consumidor Final</SelectItem>
+                    {tiposIva.map((tipo) => (
+                      <SelectItem key={tipo.id} value={tipo.id}>
+                        {tipo.nombre}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
-
-              <div>
-                <Label>Dirección</Label>
-                <Input placeholder="Dirección completa" />
-              </div>
-
               <div>
                 <Label>Forma de Pago</Label>
-                <Select>
+                <Select onValueChange={(value) => handleFacturaDataChange('formaPagoId', value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccionar forma de pago" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="efectivo">Efectivo</SelectItem>
-                    <SelectItem value="transferencia">Transferencia</SelectItem>
-                    <SelectItem value="credito">Tarjeta de Crédito</SelectItem>
+                    {formasPago.map((forma) => (
+                      <SelectItem key={forma.id} value={forma.id}>
+                        {forma.nombre}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
           </div>
-
           {/* Items de la factura */}
           <div className="space-y-4">
             <div className="grid grid-cols-12 gap-2">
@@ -171,7 +322,6 @@ const Billing: React.FC = () => {
                 </Button>
               </div>
             </div>
-
             <Table>
               <TableHeader>
                 <TableRow>
@@ -202,14 +352,17 @@ const Billing: React.FC = () => {
                 ))}
               </TableBody>
             </Table>
-
+            {error && <p className="text-red-500 text-sm">{error}</p>}
             <div className="flex justify-between items-center pt-4 border-t">
               <div className="text-lg font-semibold">
                 Total: ${total.toFixed(2)}
               </div>
-              <Button>
+              <Button 
+                onClick={handleGenerarFactura}
+                disabled={isLoading}
+              >
                 <Receipt className="mr-2 h-4 w-4" />
-                Generar Factura
+                {isLoading ? 'Generando...' : 'Generar Factura'}
               </Button>
             </div>
           </div>
