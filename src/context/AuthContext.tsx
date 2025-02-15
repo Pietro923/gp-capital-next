@@ -1,46 +1,60 @@
+// AuthContext.tsx
 "use client";
-import { createContext, useContext, useEffect, useState } from "react";
-import { supabase } from "@/utils/supabase/client";
-import { User } from "@supabase/supabase-js";
 
+import { createContext, useContext, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/utils/supabase/client";
+
+// ✅ INTERFAZ para tipado correcto
 interface AuthContextType {
-  user: User | null;
+  user: any;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
+// ✅ Contexto tipado
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
-    const fetchUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session?.user || null);
       setLoading(false);
     };
 
-    fetchUser();
+    checkUser();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_, session) => setUser(session?.user ?? null)
-    );
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+    });
 
-    return () => subscription?.unsubscribe();
+    return () => {
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   const login = async (email: string, password: string) => {
-    setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
     if (error) throw error;
+    const { data: { session } } = await supabase.auth.getSession();
+    setUser(session?.user || null);
+    router.refresh();
   };
 
   const logout = async () => {
     await supabase.auth.signOut();
     setUser(null);
+    router.push("/");
+    router.refresh();
   };
 
   return (
@@ -50,10 +64,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function useAuth() {
+// ✅ Hook tipado
+export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (!context) {
     throw new Error("useAuth debe usarse dentro de un AuthProvider");
   }
   return context;
-}
+};
