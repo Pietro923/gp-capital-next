@@ -1,37 +1,43 @@
 // AuthContext.tsx
 "use client";
 
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/utils/supabase/client";
+import { User } from "@supabase/supabase-js";
 
-// ✅ INTERFAZ para tipado correcto
+// ✅ INTERFAZ para el contexto
 interface AuthContextType {
-  user: any;
+  user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
-// ✅ Contexto tipado
+// ✅ Props para el Provider
+interface AuthProviderProps {
+  children: ReactNode;
+}
+
+// Contexto tipado
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<any>(null);
+export function AuthProvider({ children }: AuthProviderProps) {
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
     const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user || null);
+      const { data } = await supabase.auth.getSession();
+      setUser(data.session?.user ?? null);
       setLoading(false);
     };
 
     checkUser();
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null);
+      setUser(session?.user ?? null);
     });
 
     return () => {
@@ -40,13 +46,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
-    const { data: { session } } = await supabase.auth.getSession();
-    setUser(session?.user || null);
     router.refresh();
   };
 
@@ -64,7 +65,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ✅ Hook tipado
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (!context) {
