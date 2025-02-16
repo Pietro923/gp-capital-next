@@ -6,6 +6,7 @@ import "@/styles/globals.css";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect } from "react";
+import { Toaster } from "@/components/ui/toaster";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -64,6 +65,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
           <ProtectedLayout>
             {children}
+            <Toaster />
           </ProtectedLayout>
         </body>
       </html>
