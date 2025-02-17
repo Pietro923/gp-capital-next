@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Search, Download, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from '@/utils/supabase/client';
+import { PagarDialog } from "@/components/PagarDialog";
 
 // Interfaces actualizadas según el esquema de Supabase
 interface Cliente {
@@ -72,36 +73,37 @@ const LoanDetails = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedPrestamos, setExpandedPrestamos] = useState<string[]>([]);
+  const [open, setOpen] = useState(false);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const { data: prestamosData, error: prestamosError } = await supabase
+        .from('prestamos')
+        .select(`
+          *,
+          cliente:clientes(*),
+          cuotas(*)
+        `)
+        .order('fecha_inicio', { ascending: false });
+
+      if (prestamosError) throw prestamosError;
+
+      const prestamosProcessed: PrestamoConCuotas[] = prestamosData.map(prestamo => ({
+        ...prestamo,
+        cuotas_pagadas: prestamo.cuotas.filter((c: { estado: string; }) => c.estado === 'PAGADO').length
+      }));
+
+      setPrestamos(prestamosProcessed);
+    } catch (err) {
+      console.error('Error al cargar datos:', err);
+      setError('Error al cargar los datos de préstamos');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // TODO: Reemplazar con tu cliente de Supabase
-        const { data: prestamosData, error: prestamosError } = await supabase
-          .from('prestamos')
-          .select(`
-            *,
-            cliente:clientes(*),
-            cuotas(*)
-          `)
-          .order('fecha_inicio', { ascending: false });
-
-        if (prestamosError) throw prestamosError;
-
-        const prestamosProcessed: PrestamoConCuotas[] = prestamosData.map(prestamo => ({
-          ...prestamo,
-          cuotas_pagadas: prestamo.cuotas.filter((c: { estado: string; }) => c.estado === 'PAGADO').length
-        }));
-
-        setPrestamos(prestamosProcessed);
-      } catch (err) {
-        console.error('Error al cargar datos:', err);
-        setError('Error al cargar los datos de préstamos');
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchData();
   }, []);
 
@@ -251,24 +253,45 @@ const LoanDetails = () => {
                       </TableRow>
                       {expandedPrestamos.includes(prestamo.id) && prestamo.cuotas.map(cuota => (
                         <TableRow key={cuota.id} className="bg-slate-50">
-                          <TableCell></TableCell>
-                          <TableCell colSpan={2} className="text-sm">
-                            Cuota {cuota.numero_cuota}
-                          </TableCell>
-                          <TableCell className="text-right text-sm">
-                            ${cuota.monto.toLocaleString('es-AR')}
-                          </TableCell>
-                          <TableCell className="text-right text-sm">
-                            {cuota.fecha_pago ? 
-                              new Date(cuota.fecha_pago).toLocaleDateString('es-AR') : 
-                              '-'}
-                          </TableCell>
-                          <TableCell>
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getEstadoColor(cuota.estado)}`}>
-                              {cuota.estado}
-                            </span>
-                          </TableCell>
-                        </TableRow>
+                        <TableCell></TableCell>
+                        <TableCell colSpan={2} className="text-sm">
+                          Cuota {cuota.numero_cuota}
+                        </TableCell>
+                        <TableCell className="text-right text-sm">
+                          ${cuota.monto.toLocaleString('es-AR')}
+                        </TableCell>
+                        <TableCell className="text-right text-sm">
+                          {cuota.fecha_pago ? 
+                            new Date(cuota.fecha_pago).toLocaleDateString('es-AR') : 
+                            '-'}
+                        </TableCell>
+                        <TableCell>
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getEstadoColor(cuota.estado)}`}>
+                            {cuota.estado}
+                          </span>
+                          
+                          {cuota.estado !== 'PAGADO' && (
+  <>
+    <Button onClick={() => setOpen(true)}>
+      Pagar
+    </Button>
+    <PagarDialog
+      open={open}
+      onOpenChange={setOpen}
+      onConfirm={() => {
+        // Recargar los datos después del pago
+        fetchData();
+        setOpen(false);
+      }}
+      numeroCuota={cuota.numero_cuota}
+      cuotaId={cuota.id}
+      prestamoId={prestamo.id}
+      montoCuota={cuota.monto}
+    />
+  </>
+)}
+                        </TableCell>
+                      </TableRow>
                       ))}
                     </React.Fragment>
                   ))}

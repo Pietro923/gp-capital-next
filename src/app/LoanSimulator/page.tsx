@@ -24,6 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Calculator, Download } from "lucide-react";
+import { GenerarPrestamo } from "@/components/GenerarPrestamo";
 
 interface CuotaSimulada {
   numero: number;
@@ -46,6 +47,7 @@ const LoanSimulator: React.FC = () => {
   const [cuotas, setCuotas] = useState<CuotaSimulada[]>([]);
   const [cuotaMensual, setCuotaMensual] = useState<number>(0);
   const [montoTotal, setMontoTotal] = useState<number>(0);
+  const [open, setOpen] = useState(false);
 
   const calcularCuotas = () => {
     const tasaMensual = tasaInteres / 12 / 100;
@@ -178,6 +180,34 @@ const LoanSimulator: React.FC = () => {
               <Calculator className="mr-2 h-4 w-4" />
               Calcular
             </Button>
+            <Button onClick={() => setOpen(true)}>
+              <Calculator className="mr-2 h-4 w-4" />
+              Generar Prestamo
+            </Button>
+            <GenerarPrestamo
+  open={open}
+  onOpenChange={setOpen}
+  onConfirm={() => {
+    setOpen(false);
+    // Opcional: limpiar el formulario después de generar el préstamo
+    setMonto(0);
+    setPlazo(12);
+    setTasaInteres(65);
+    setCuotas([]);
+  }}
+  prestamoData={{
+    monto,
+    plazo,
+    tasaInteres,
+    empresa,
+    cuotas: cuotas.map(c => ({
+      numero: c.numero,
+      fechaVencimiento: c.fechaVencimiento,
+      cuota: c.cuota
+    }))
+  }}
+/>
+            
             {cuotas.length > 0 && (
               <Button variant="outline" onClick={exportToExcel}>
                 <Download className="mr-2 h-4 w-4" />
