@@ -19,8 +19,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Receipt, Trash2 } from "lucide-react";
+import { Plus, Receipt, Trash2, Download } from "lucide-react";
 import { supabase } from '@/utils/supabase/client';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
+
+// Improved type definition for jsPDF with autoTable
+declare module 'jspdf' {
+  interface jsPDF {
+    autoTable: (options: unknown) => void;
+    lastAutoTable: {
+      finalY: number;
+    };
+  }
+}
 
 interface InvoiceItem {
   description: string;
@@ -54,6 +66,22 @@ interface FacturaFormData {
   formaPagoId: string;
 }
 
+// Add interface for factura data
+interface FacturaData {
+  id: string;
+  tipo_factura: string;
+  cliente_id: string;
+  tipo_iva_id: string;
+  forma_pago_id: string;
+  total_neto: number;
+  iva: number;
+  total_factura: number;
+  created_at: string;
+  cliente: { nombre: string; apellido: string; direccion: string; dni: string };
+  tipo_iva: { nombre: string };
+  forma_pago: { nombre: string };
+}
+
 const Billing: React.FC = () => {
   // Estados para los items de la factura
   const [items, setItems] = useState<InvoiceItem[]>([]);
@@ -78,6 +106,7 @@ const Billing: React.FC = () => {
   const [formasPago, setFormasPago] = useState<FormaPago[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [, setFacturaActual] = useState<FacturaData | null>(null);
 
   // Cargar datos necesarios
   useEffect(() => {
@@ -88,25 +117,23 @@ const Billing: React.FC = () => {
           .from('clientes')
           .select('*');
         if (clientesData) setClientes(clientesData);
-
+        
         // Cargar tipos de IVA
         const { data: tiposIvaData } = await supabase
           .from('tipos_iva')
           .select('*');
         if (tiposIvaData) setTiposIva(tiposIvaData);
-
+        
         // Cargar formas de pago
         const { data: formasPagoData } = await supabase
           .from('formas_pago')
           .select('*');
         if (formasPagoData) setFormasPago(formasPagoData);
-
       } catch (error) {
         console.error('Error cargando datos:', error);
         setError('Error al cargar los datos necesarios');
       }
     };
-
     fetchData();
   }, []);
 
@@ -140,17 +167,103 @@ const Billing: React.FC = () => {
     }));
   };
 
-  // Generar factura
+  // Generar PDF a partir de los datos de la factura
+  const generatePDF = async (facturaId: string) => {
+    try {
+      // Obtener los datos completos de la factura
+      const { data: facturaData, error: facturaError } = await supabase
+        .from('facturacion')
+        .select(`
+          *,
+          cliente:cliente_id(nombre, apellido, direccion, dni),
+          tipo_iva:tipo_iva_id(nombre),
+          forma_pago:forma_pago_id(nombre)
+        `)
+        .eq('id', facturaId)
+        .single();
+      
+      if (facturaError) throw facturaError;
+      if (!facturaData) throw new Error('No se encontraron datos de la factura');
+      
+      // Obtener los detalles de la factura
+      const { data: detallesData, error: detallesError } = await supabase
+        .from('detalles_factura')
+        .select('*')
+        .eq('factura_id', facturaId);
+      
+      if (detallesError) throw detallesError;
+      if (!detallesData) throw new Error('No se encontraron detalles de la factura');
+      
+      // Crear el documento PDF
+      const doc = new jsPDF();
+      const fecha = new Date(facturaData.created_at).toLocaleDateString();
+      
+      // Encabezado
+      doc.setFontSize(18);
+      doc.text(`FACTURA ${facturaData.tipo_factura}`, 105, 20, { align: 'center' });
+      doc.setFontSize(12);
+      doc.text(`Nº: ${facturaData.id}`, 105, 30, { align: 'center' });
+      doc.text(`Fecha: ${fecha}`, 105, 40, { align: 'center' });
+      
+      // Datos del emisor
+      doc.setFontSize(10);
+      doc.text('EMPRESA S.A.', 14, 60);
+      doc.text('CUIT: 30-12345678-9', 14, 65);
+      doc.text('Dirección: Av. Siempreviva 742', 14, 70);
+      
+      // Datos del cliente
+      doc.text(`Cliente: ${facturaData.cliente.nombre} ${facturaData.cliente.apellido}`, 14, 85);
+      doc.text(`DNI/CUIT: ${facturaData.cliente.dni}`, 14, 90);
+      doc.text(`Dirección: ${facturaData.cliente.direccion}`, 14, 95);
+      doc.text(`Condición IVA: ${facturaData.tipo_iva.nombre}`, 14, 100);
+      doc.text(`Forma de Pago: ${facturaData.forma_pago.nombre}`, 14, 105);
+      
+      // Tabla de items
+      const tableColumn = ["Descripción", "Cantidad", "Precio Unit.", "Subtotal"];
+      const tableRows = detallesData.map(detalle => [
+        detalle.descripcion,
+        detalle.cantidad,
+        `$${detalle.precio_unitario.toFixed(2)}`,
+        `$${detalle.subtotal.toFixed(2)}`
+      ]);
+      
+      doc.autoTable({
+        startY: 115,
+        head: [tableColumn],
+        body: tableRows,
+        theme: 'striped',
+        headStyles: { fillColor: [66, 66, 66] }
+      });
+      
+      // Totales
+      const finalY = doc.lastAutoTable.finalY + 10;
+      doc.text(`Subtotal: $${facturaData.total_neto.toFixed(2)}`, 140, finalY);
+      doc.text(`IVA (21%): $${facturaData.iva.toFixed(2)}`, 140, finalY + 7);
+      doc.text(`TOTAL: $${facturaData.total_factura.toFixed(2)}`, 140, finalY + 14);
+      
+      // Pie de página
+      doc.setFontSize(8);
+      doc.text('Documento no válido como factura oficial - Copia digital', 105, 280, { align: 'center' });
+      
+      // Descargar el PDF
+      doc.save(`Factura_${facturaData.tipo_factura}_${facturaId}.pdf`);
+      
+    } catch (error) {
+      console.error('Error generando PDF:', error);
+      alert('Error al generar el PDF de la factura');
+    }
+  };
+
   // Generar factura
   const handleGenerarFactura = async () => {
     if (!formData.tipoFactura || !formData.clienteId || !formData.tipoIvaId || !formData.formaPagoId || items.length === 0) {
       setError('Por favor complete todos los campos necesarios');
       return;
     }
-
+    
     setIsLoading(true);
     setError(null);
-
+    
     try {
       // Insertar la factura principal
       const { data: nuevaFactura, error: facturaError } = await supabase
@@ -168,10 +281,10 @@ const Billing: React.FC = () => {
         ])
         .select()
         .single();
-
+      
       if (facturaError) throw facturaError;
       if (!nuevaFactura) throw new Error('No se pudo crear la factura');
-
+      
       // Insertar los detalles de la factura
       const detallesPromises = items.map(item => 
         supabase
@@ -186,9 +299,15 @@ const Billing: React.FC = () => {
             }
           ])
       );
-
+      
       await Promise.all(detallesPromises);
-
+      
+      // Guardar la factura actual para generar el PDF
+      setFacturaActual(nuevaFactura as FacturaData);
+      
+      // Generar y descargar el PDF
+      await generatePDF(nuevaFactura.id);
+      
       // Limpiar el formulario
       setItems([]);
       setFormData({
@@ -197,9 +316,9 @@ const Billing: React.FC = () => {
         tipoIvaId: '',
         formaPagoId: '',
       });
-
+      
       alert('Factura generada exitosamente');
-
+      
     } catch (error) {
       console.error('Error generando factura:', error);
       setError('Error al generar la factura');
@@ -207,6 +326,7 @@ const Billing: React.FC = () => {
       setIsLoading(false);
     }
   };
+
   return (
     <div className="space-y-6">
       <Card>
@@ -361,7 +481,7 @@ const Billing: React.FC = () => {
                 onClick={handleGenerarFactura}
                 disabled={isLoading}
               >
-                <Receipt className="mr-2 h-4 w-4" />
+                <Download className="mr-2 h-4 w-4" />
                 {isLoading ? 'Generando...' : 'Generar Factura'}
               </Button>
             </div>
