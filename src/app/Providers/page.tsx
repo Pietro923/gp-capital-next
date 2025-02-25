@@ -202,138 +202,145 @@ const Providers: React.FC = () => {
           </p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button variant="outline" className="bg-blue-500 text-white hover:bg-blue-600">
-              <Plus className="mr-2 h-4 w-4" /> Nuevo Proveedor
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Nuevo Proveedor</DialogTitle>
-              <DialogDescription>
-                Complete los datos del nuevo proveedor
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="nombre">Nombre *</Label>
-                  <Input
-                    id="nombre"
-                    name="nombre"
-                    value={formData.nombre}
-                    onChange={handleInputChange}
-                    className="w-full"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="cuit">CUIT *</Label>
-                  <Input
-                    id="cuit"
-                    name="cuit"
-                    value={formData.cuit}
-                    onChange={handleInputChange}
-                    className="w-full"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="tipo_iva_id">Tipo IVA</Label>
-                  <Select 
-                    onValueChange={handleSelectChange} 
-                    value={formData.tipo_iva_id || ""}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccione tipo de IVA" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {tiposIva.map(tipo => (
-                        <SelectItem key={tipo.id} value={tipo.id}>
-                          {tipo.nombre}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="contacto">Persona de Contacto</Label>
-                  <Input
-                    id="contacto"
-                    name="contacto"
-                    value={formData.contacto}
-                    onChange={handleInputChange}
-                    className="w-full"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="correo">Correo</Label>
-                  <Input
-                    id="correo"
-                    name="correo"
-                    type="email"
-                    value={formData.correo}
-                    onChange={handleInputChange}
-                    className="w-full"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="telefono">Teléfono</Label>
-                  <Input
-                    id="telefono"
-                    name="telefono"
-                    type="tel"
-                    value={formData.telefono}
-                    onChange={handleInputChange}
-                    className="w-full"
-                  />
-                </div>
-                <div className="col-span-2 space-y-2">
-                  <Label htmlFor="direccion">Dirección</Label>
-                  <Input
-                    id="direccion"
-                    name="direccion"
-                    value={formData.direccion}
-                    onChange={handleInputChange}
-                    className="w-full"
-                  />
-                </div>
-                <div className="col-span-2 space-y-2">
-                  <Label htmlFor="observaciones">Observaciones</Label>
-                  <Textarea
-                    id="observaciones"
-                    name="observaciones"
-                    value={formData.observaciones}
-                    onChange={handleInputChange}
-                    className="w-full"
-                    rows={3}
-                  />
-                </div>
-              </div>
-              {formError && (
-                <Alert variant="destructive">
-                  <AlertDescription>{formError}</AlertDescription>
-                </Alert>
-              )}
-              <DialogFooter>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => setIsDialogOpen(false)}
-                  className="mr-2"
-                >
-                  Cancelar
-                </Button>
-                <Button type="submit" disabled={isSubmitting} className="bg-blue-500 text-white hover:bg-blue-600">
-                  {isSubmitting && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
-                  Guardar Proveedor
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+  <DialogTrigger asChild>
+    <Button variant="outline" className="bg-blue-500 text-white hover:bg-blue-600">
+      <Plus className="mr-2 h-4 w-4" /> Nuevo Proveedor
+    </Button>
+  </DialogTrigger>
+  <DialogContent className="sm:max-w-md">
+    <DialogHeader>
+      <DialogTitle>Nuevo Proveedor</DialogTitle>
+      <DialogDescription>
+        Complete los datos del nuevo proveedor
+      </DialogDescription>
+    </DialogHeader>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="nombre">Nombre *</Label>
+          <Input
+            id="nombre"
+            name="nombre"
+            value={formData.nombre}
+            onChange={handleInputChange}
+            placeholder="Ingrese el nombre del proveedor"
+            className="w-full"
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="cuit">CUIT *</Label>
+          <Input
+            id="cuit"
+            name="cuit"
+            value={formData.cuit}
+            onChange={handleInputChange}
+            placeholder="XX-XXXXXXXX-X"
+            className="w-full"
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="tipo_iva_id">Tipo IVA</Label>
+          <Select 
+            onValueChange={handleSelectChange} 
+            value={formData.tipo_iva_id || ""}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Seleccione tipo de IVA" />
+            </SelectTrigger>
+            <SelectContent>
+              {tiposIva.map(tipo => (
+                <SelectItem key={tipo.id} value={tipo.id}>
+                  {tipo.nombre}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="contacto">Persona de Contacto</Label>
+          <Input
+            id="contacto"
+            name="contacto"
+            value={formData.contacto}
+            onChange={handleInputChange}
+            placeholder="Ingrese el nombre de contacto"
+            className="w-full"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="correo">Correo</Label>
+          <Input
+            id="correo"
+            name="correo"
+            type="email"
+            value={formData.correo}
+            onChange={handleInputChange}
+            placeholder="correo@ejemplo.com"
+            className="w-full"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="telefono">Teléfono</Label>
+          <Input
+            id="telefono"
+            name="telefono"
+            type="tel"
+            value={formData.telefono}
+            onChange={handleInputChange}
+            placeholder="Ingrese el número de teléfono"
+            className="w-full"
+          />
+        </div>
+        <div className="col-span-2 space-y-2">
+          <Label htmlFor="direccion">Dirección</Label>
+          <Input
+            id="direccion"
+            name="direccion"
+            value={formData.direccion}
+            onChange={handleInputChange}
+            placeholder="Ingrese la dirección del proveedor"
+            className="w-full"
+          />
+        </div>
+        <div className="col-span-2 space-y-2">
+          <Label htmlFor="observaciones">Observaciones</Label>
+          <Textarea
+            id="observaciones"
+            name="observaciones"
+            value={formData.observaciones}
+            onChange={handleInputChange}
+            placeholder="Ingrese cualquier observación adicional"
+            className="w-full"
+            rows={3}
+          />
+        </div>
+      </div>
+      {formError && (
+        <Alert variant="destructive">
+          <AlertDescription>{formError}</AlertDescription>
+        </Alert>
+      )}
+      <DialogFooter>
+        <Button 
+          type="button" 
+          variant="outline" 
+          onClick={() => setIsDialogOpen(false)}
+          className="mr-2"
+        >
+          Cancelar
+        </Button>
+        <Button type="submit" disabled={isSubmitting} className="bg-blue-500 text-white hover:bg-blue-600">
+          {isSubmitting && (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          )}
+          Guardar Proveedor
+        </Button>
+      </DialogFooter>
+    </form>
+  </DialogContent>
+</Dialog>
       </div>
       <Card className="shadow-lg rounded-lg">
         <CardHeader>

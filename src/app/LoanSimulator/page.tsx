@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Card,
   CardContent,
@@ -28,6 +28,7 @@ import { Calculator, Download } from "lucide-react";
 import { GenerarPrestamo } from "@/components/GenerarPrestamo";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { supabase } from '@/utils/supabase/client';
 
 interface CuotaSimulada {
   numero: number;
@@ -38,6 +39,18 @@ interface CuotaSimulada {
   cuota: number;
   capitalRestante: number;
 }
+// Interfaces ajustadas según el esquema de la base de datos
+interface Proveedor {
+  id: string; // Cambiado a string para UUID
+  nombre: string;
+  cuit: string;
+  direccion: string | null;
+  telefono: string | null;
+  correo: string | null;
+  contacto: string | null;
+  observaciones: string | null;
+  created_at: string;
+}
 
 interface ExcelRow {
   [key: string]: string | number;
@@ -47,7 +60,7 @@ const LoanSimulator: React.FC = () => {
   const [monto, setMonto] = useState<number>(0);
   const [plazo, setPlazo] = useState<number>(12);
   const [tasaInteres, setTasaInteres] = useState<number>(65);
-  const [empresa, setEmpresa] = useState<string>('Pueble');
+  const [empresa, setEmpresa] = useState<string>('Proveedor');
   const [frecuencia, setFrecuencia] = useState<string>('mensual');
   const [porcentajeIVA, setPorcentajeIVA] = useState<number>(21);
   const [aplicarIVA, setAplicarIVA] = useState<boolean>(true);
@@ -55,6 +68,34 @@ const LoanSimulator: React.FC = () => {
   const [cuotaPeriodica, setCuotaPeriodica] = useState<number>(0);
   const [montoTotal, setMontoTotal] = useState<number>(0);
   const [open, setOpen] = useState(false);
+  
+  const [proveedores, setProveedores] = useState<Proveedor[]>([]);
+  const [, setIsLoading] = useState(true);
+  const [, setError] = useState<string | null>(null);
+  
+  useEffect(() => {
+    const fetchProveedores = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        // Cargar proveedores
+        const { data: proveedoresData, error: proveedoresError } = await supabase
+          .from('proveedores')
+          .select('*');
+        
+        if (proveedoresError) throw proveedoresError;
+        setProveedores(proveedoresData || []);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      } catch (error) {
+        setError('Error al cargar los datos');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchProveedores();
+  }, []);
+
 
   // Función para obtener los plazos basados en la frecuencia
   const getPlazosDisponibles = () => {
@@ -177,19 +218,25 @@ const LoanSimulator: React.FC = () => {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Empresa</label>
-              <Select value={empresa} onValueChange={setEmpresa}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar empresa" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Pueble">Pueble (Case)</SelectItem>
-                  <SelectItem value="Semage">Semage (Repuestos)</SelectItem>
-                  <SelectItem value="Magi">Magi (Ducati)</SelectItem>
-                  <SelectItem value="ub.ti">ub.ti (Audi)</SelectItem>
-                  <SelectItem value="Cpm">Cpm (Kia)</SelectItem>
-                </SelectContent>
-              </Select>
+            <label className="text-sm font-medium">Empresa</label>
+<Select value={empresa} onValueChange={setEmpresa}>
+  <SelectTrigger>
+    <SelectValue>{empresa}</SelectValue>
+  </SelectTrigger>
+  <SelectContent>
+    {/* Opción "placeholder" con un valor especial */}
+    <SelectItem value="placeholder" disabled>
+      Seleccionar empresa
+    </SelectItem>
+    {proveedores.map((proveedor) => (
+      <SelectItem key={proveedor.id} value={proveedor.nombre}>
+        {proveedor.nombre}
+      </SelectItem>
+    ))}
+  </SelectContent>
+</Select>
+
+
             </div>
             
             <div className="space-y-2">
