@@ -25,6 +25,8 @@ interface GenerarPrestamoProps {
     plazo: number;
     tasaInteres: number;
     empresa: string;
+    frecuencia: string;
+    iva: number;
     cuotas: Array<{
       numero: number;
       fechaVencimiento: string;

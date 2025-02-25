@@ -11,7 +11,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Building2, Plus, Pencil, Trash2, Loader2 } from "lucide-react";
 import {
   Dialog,
@@ -24,82 +23,104 @@ import {
 } from "@/components/ui/dialog";
 import { supabase } from '@/utils/supabase/client';
 import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
-interface Provider {
-  status: string;
-  id: number;
-  marca: string;
-  contacto: string | number | readonly string[] | undefined;
+// Interfaces ajustadas según el esquema de la base de datos
+interface Proveedor {
+  id: string; // Cambiado a string para UUID
   nombre: string;
-  correo: string;
-  telefono: string;
-  direc: string;
-}
-interface NewProviderForm {
-  marca: string;
-  contacto: string | number | readonly string[] | undefined;
-  nombre: string;
-  correo: string;
-  telefono: string;
-  direc: string;
+  cuit: string;
+  tipo_iva_id: string | null;
+  direccion: string | null;
+  telefono: string | null;
+  correo: string | null;
+  contacto: string | null;
+  observaciones: string | null;
+  created_at: string;
 }
 
-const initialFormState: NewProviderForm = {
+interface TipoIva {
+  id: string;
+  nombre: string;
+}
+
+interface ProveedorFormData {
+  nombre: string;
+  cuit: string;
+  tipo_iva_id: string | null;
+  direccion: string;
+  telefono: string;
+  correo: string;
+  contacto: string;
+  observaciones: string;
+}
+
+const initialFormState: ProveedorFormData = {
   nombre: '',
-  correo: '',
+  cuit: '',
+  tipo_iva_id: null,
+  direccion: '',
   telefono: '',
-  direc: '',
-  marca: '',
+  correo: '',
   contacto: '',
+  observaciones: ''
 };
 
 const Providers: React.FC = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [Providers, setProviders] = useState<Provider[]>([]);
-  const [formData, setFormData] = useState<NewProviderForm>(initialFormState);
+  const [proveedores, setProveedores] = useState<Proveedor[]>([]);
+  const [tiposIva, setTiposIva] = useState<TipoIva[]>([]);
+  const [formData, setFormData] = useState<ProveedorFormData>(initialFormState);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
-  const [, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setFormError(null);
   
-    // Validar que todos los campos obligatorios estén llenos
-    if (
-      !formData.nombre ||
-      !formData.marca ||
-      !formData.contacto ||
-      !formData.correo ||
-      !formData.telefono ||
-      !formData.direc
-    ) {
-      setFormError('Por favor, complete todos los campos antes de guardar.');
+    // Validar campos obligatorios según la base de datos
+    if (!formData.nombre || !formData.cuit) {
+      setFormError('Por favor, complete los campos obligatorios: Nombre y CUIT.');
       setIsSubmitting(false);
-      return; // Detener la ejecución si falta algún campo
+      return;
     }
   
     try {
       const { data, error } = await supabase
         .from('proveedores')
-        .insert([
-          {
-            ...formData,
-          }
-        ])
+        .insert([{
+          nombre: formData.nombre,
+          cuit: formData.cuit,
+          tipo_iva_id: formData.tipo_iva_id,
+          direccion: formData.direccion || null,
+          telefono: formData.telefono || null,
+          correo: formData.correo || null,
+          contacto: formData.contacto || null,
+          observaciones: formData.observaciones || null
+        }])
         .select();
   
       if (error) throw error;
   
-      setProviders(prev => [...prev, data[0]]);
+      if (data) {
+        setProveedores(prev => [...prev, data[0]]);
+      }
       setFormData(initialFormState);
       setIsDialogOpen(false);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error al agregar proveedor:', error);
-      setFormError('Error al agregar el proveedor. Por favor, intente nuevamente.');
+    
+      if (error instanceof Error) {
+        setFormError(error.message);
+      } else {
+        setFormError('Error al agregar el proveedor. Por favor, intente nuevamente.');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -109,34 +130,66 @@ const Providers: React.FC = () => {
     const fetchProveedores = async () => {
       setIsLoading(true);
       setError(null);
-
       try {
-        const { data, error } = await supabase
+        // Cargar proveedores
+        const { data: proveedoresData, error: proveedoresError } = await supabase
           .from('proveedores')
-          .select('*')
-
-        if (error) {
-          throw error;
+          .select('*');
+        
+        if (proveedoresError) throw proveedoresError;
+        setProveedores(proveedoresData || []);
+        
+        // Cargar tipos de IVA
+        const { data: tiposIvaData, error: tiposIvaError } = await supabase
+          .from('tipos_iva')
+          .select('*');
+        
+        if (tiposIvaError) throw tiposIvaError;
+        setTiposIva(tiposIvaData || []);
+        
+      } catch (error: unknown) {
+        console.error('Error fetching data:', error);
+      
+        if (error instanceof Error) {
+          setError(error.message);
+        } else {
+          setError('Error al cargar los datos');
         }
-
-        setProviders(data || []);
-      } catch (error) {
-        console.error('Error fetching proveedores:', error);
-        setError('Error al cargar los proveedores');
       } finally {
         setIsLoading(false);
       }
     };
-
+    
     fetchProveedores();
   }, []);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
+  };
+
+  const handleSelectChange = (value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      tipo_iva_id: value
+    }));
+  };
+
+  // Filtrar proveedores basado en la búsqueda
+  const filteredProveedores = proveedores.filter(proveedor => 
+    proveedor.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    proveedor.cuit.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (proveedor.contacto && proveedor.contacto.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
+  // Función para obtener el nombre del tipo de IVA
+  const getTipoIvaNombre = (tipoIvaId: string | null) => {
+    if (!tipoIvaId) return "No especificado";
+    const tipoIva = tiposIva.find(tipo => tipo.id === tipoIvaId);
+    return tipoIva ? tipoIva.nombre : "No especificado";
   };
 
   return (
@@ -145,7 +198,7 @@ const Providers: React.FC = () => {
         <div>
           <h2 className="text-2xl font-bold">Gestión de Proveedores</h2>
           <p className="text-sm text-slate-500">
-            Administra las empresas del Grupo Pueble
+            Administra los proveedores del sistema
           </p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -158,33 +211,53 @@ const Providers: React.FC = () => {
             <DialogHeader>
               <DialogTitle>Nuevo Proveedor</DialogTitle>
               <DialogDescription>
-                Complete los datos del Nuevo Proveedor
+                Complete los datos del nuevo proveedor
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="nombre">Nombre</Label>
+                  <Label htmlFor="nombre">Nombre *</Label>
                   <Input
                     id="nombre"
                     name="nombre"
                     value={formData.nombre}
                     onChange={handleInputChange}
                     className="w-full"
+                    required
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="marca">Marca</Label>
+                  <Label htmlFor="cuit">CUIT *</Label>
                   <Input
-                    id="marca"
-                    name="marca"
-                    value={formData.marca}
+                    id="cuit"
+                    name="cuit"
+                    value={formData.cuit}
                     onChange={handleInputChange}
                     className="w-full"
+                    required
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="contacto">Contacto</Label>
+                  <Label htmlFor="tipo_iva_id">Tipo IVA</Label>
+                  <Select 
+                    onValueChange={handleSelectChange} 
+                    value={formData.tipo_iva_id || ""}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccione tipo de IVA" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {tiposIva.map(tipo => (
+                        <SelectItem key={tipo.id} value={tipo.id}>
+                          {tipo.nombre}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="contacto">Persona de Contacto</Label>
                   <Input
                     id="contacto"
                     name="contacto"
@@ -193,7 +266,7 @@ const Providers: React.FC = () => {
                     className="w-full"
                   />
                 </div>
-                <div className="col-span-2 space-y-2">
+                <div className="space-y-2">
                   <Label htmlFor="correo">Correo</Label>
                   <Input
                     id="correo"
@@ -216,23 +289,32 @@ const Providers: React.FC = () => {
                   />
                 </div>
                 <div className="col-span-2 space-y-2">
-                  <Label htmlFor="direc">Dirección</Label>
+                  <Label htmlFor="direccion">Dirección</Label>
                   <Input
-                    id="direc"
-                    name="direc"
-                    value={formData.direc}
+                    id="direccion"
+                    name="direccion"
+                    value={formData.direccion}
                     onChange={handleInputChange}
                     className="w-full"
                   />
                 </div>
+                <div className="col-span-2 space-y-2">
+                  <Label htmlFor="observaciones">Observaciones</Label>
+                  <Textarea
+                    id="observaciones"
+                    name="observaciones"
+                    value={formData.observaciones}
+                    onChange={handleInputChange}
+                    className="w-full"
+                    rows={3}
+                  />
+                </div>
               </div>
-
               {formError && (
                 <Alert variant="destructive">
                   <AlertDescription>{formError}</AlertDescription>
                 </Alert>
               )}
-
               <DialogFooter>
                 <Button 
                   type="button" 
@@ -246,22 +328,21 @@ const Providers: React.FC = () => {
                   {isSubmitting && (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   )}
-                  Guardar Cliente
+                  Guardar Proveedor
                 </Button>
               </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
       </div>
-
       <Card className="shadow-lg rounded-lg">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Building2 className="h-5 w-5" />
-            Proveedores Activos
+            Proveedores
           </CardTitle>
           <CardDescription>
-            Lista de empresas asociadas y sus marcas
+            Lista de proveedores registrados en el sistema
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -269,50 +350,66 @@ const Providers: React.FC = () => {
             <Input 
               placeholder="Buscar proveedor..." 
               className="max-w-sm"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
           
-          <div className="overflow-x-auto">
-            <Table className="min-w-full">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Empresa</TableHead>
-                  <TableHead>Marca</TableHead>
-                  <TableHead>Contacto</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Teléfono</TableHead>
-                  <TableHead>Dirección</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {Providers.map((provider) => (
-                  <TableRow key={provider.id} className="hover:bg-gray-50 transition-colors">
-                    <TableCell className="font-medium">{provider.nombre}</TableCell>
-                    <TableCell>{provider.marca}</TableCell>
-                    <TableCell>{provider.contacto}</TableCell>
-                    <TableCell>{provider.correo}</TableCell>
-                    <TableCell>{provider.telefono}</TableCell>
-                    <TableCell>{provider.direc}</TableCell>
-                    <TableCell>
-                      <Badge variant={provider.status === 'active' ? 'default' : 'secondary'}>
-                        {provider.status === 'active' ? 'Activo' : 'Inactivo'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" className="mr-2 hover:bg-gray-200">
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="hover:bg-gray-200">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
+          {isLoading ? (
+            <div className="flex justify-center items-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+            </div>
+          ) : error ? (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table className="min-w-full">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead>CUIT</TableHead>
+                    <TableHead>Tipo IVA</TableHead>
+                    <TableHead>Contacto</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Teléfono</TableHead>
+                    <TableHead>Dirección</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {filteredProveedores.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8">
+                        No se encontraron proveedores
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredProveedores.map((proveedor) => (
+                      <TableRow key={proveedor.id} className="hover:bg-gray-50 transition-colors">
+                        <TableCell className="font-medium">{proveedor.nombre}</TableCell>
+                        <TableCell>{proveedor.cuit}</TableCell>
+                        <TableCell>{getTipoIvaNombre(proveedor.tipo_iva_id)}</TableCell>
+                        <TableCell>{proveedor.contacto || "-"}</TableCell>
+                        <TableCell>{proveedor.correo || "-"}</TableCell>
+                        <TableCell>{proveedor.telefono || "-"}</TableCell>
+                        <TableCell>{proveedor.direccion || "-"}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="icon" className="mr-2 hover:bg-gray-200">
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="hover:bg-gray-200">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

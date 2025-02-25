@@ -352,6 +352,7 @@ const Billing: React.FC = () => {
                   <SelectContent>
                     <SelectItem value="A">Factura A</SelectItem>
                     <SelectItem value="B">Factura B</SelectItem>
+                    <SelectItem value="C">Factura C</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
