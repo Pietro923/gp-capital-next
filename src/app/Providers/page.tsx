@@ -193,154 +193,158 @@ const Providers: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex justify-between items-center">
+    <div className="space-y-6 p-4 sm:p-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold">Gestión de Proveedores</h2>
+          <h2 className="text-xl sm:text-2xl font-bold">Gestión de Proveedores</h2>
           <p className="text-sm text-slate-500">
             Administra los proveedores del sistema
           </p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-  <DialogTrigger asChild>
-    <Button variant="outline" className="bg-blue-500 text-white hover:bg-blue-600">
-      <Plus className="mr-2 h-4 w-4" /> Nuevo Proveedor
-    </Button>
-  </DialogTrigger>
-  <DialogContent className="sm:max-w-md">
-    <DialogHeader>
-      <DialogTitle>Nuevo Proveedor</DialogTitle>
-      <DialogDescription>
-        Complete los datos del nuevo proveedor
-      </DialogDescription>
-    </DialogHeader>
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="nombre">Nombre *</Label>
-          <Input
-            id="nombre"
-            name="nombre"
-            value={formData.nombre}
-            onChange={handleInputChange}
-            placeholder="Ingrese el nombre del proveedor"
-            className="w-full"
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="cuit">CUIT *</Label>
-          <Input
-            id="cuit"
-            name="cuit"
-            value={formData.cuit}
-            onChange={handleInputChange}
-            placeholder="XX-XXXXXXXX-X"
-            className="w-full"
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="tipo_iva_id">Tipo IVA</Label>
-          <Select 
-            onValueChange={handleSelectChange} 
-            value={formData.tipo_iva_id || ""}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Seleccione tipo de IVA" />
-            </SelectTrigger>
-            <SelectContent>
-              {tiposIva.map(tipo => (
-                <SelectItem key={tipo.id} value={tipo.id}>
-                  {tipo.nombre}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="contacto">Persona de Contacto</Label>
-          <Input
-            id="contacto"
-            name="contacto"
-            value={formData.contacto}
-            onChange={handleInputChange}
-            placeholder="Ingrese el nombre de contacto"
-            className="w-full"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="correo">Correo</Label>
-          <Input
-            id="correo"
-            name="correo"
-            type="email"
-            value={formData.correo}
-            onChange={handleInputChange}
-            placeholder="correo@ejemplo.com"
-            className="w-full"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="telefono">Teléfono</Label>
-          <Input
-            id="telefono"
-            name="telefono"
-            type="tel"
-            value={formData.telefono}
-            onChange={handleInputChange}
-            placeholder="Ingrese el número de teléfono"
-            className="w-full"
-          />
-        </div>
-        <div className="col-span-2 space-y-2">
-          <Label htmlFor="direccion">Dirección</Label>
-          <Input
-            id="direccion"
-            name="direccion"
-            value={formData.direccion}
-            onChange={handleInputChange}
-            placeholder="Ingrese la dirección del proveedor"
-            className="w-full"
-          />
-        </div>
-        <div className="col-span-2 space-y-2">
-          <Label htmlFor="observaciones">Observaciones</Label>
-          <Textarea
-            id="observaciones"
-            name="observaciones"
-            value={formData.observaciones}
-            onChange={handleInputChange}
-            placeholder="Ingrese cualquier observación adicional"
-            className="w-full"
-            rows={3}
-          />
-        </div>
-      </div>
-      {formError && (
-        <Alert variant="destructive">
-          <AlertDescription>{formError}</AlertDescription>
-        </Alert>
-      )}
-      <DialogFooter>
-        <Button 
-          type="button" 
-          variant="outline" 
-          onClick={() => setIsDialogOpen(false)}
-          className="mr-2"
-        >
-          Cancelar
-        </Button>
-        <Button type="submit" disabled={isSubmitting} className="bg-blue-500 text-white hover:bg-blue-600">
-          {isSubmitting && (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          )}
-          Guardar Proveedor
-        </Button>
-      </DialogFooter>
-    </form>
-  </DialogContent>
-</Dialog>
+          <DialogTrigger asChild>
+            <Button variant="outline" className="bg-blue-500 text-white hover:bg-blue-600 w-full sm:w-auto">
+              <Plus className="mr-2 h-4 w-4" /> Nuevo Proveedor
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-md max-w-[95vw] p-4 sm:p-6">
+            <DialogHeader>
+              <DialogTitle>Nuevo Proveedor</DialogTitle>
+              <DialogDescription>
+                Complete los datos del nuevo proveedor
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="nombre">Nombre *</Label>
+                  <Input
+                    id="nombre"
+                    name="nombre"
+                    value={formData.nombre}
+                    onChange={handleInputChange}
+                    placeholder="Ingrese el nombre del proveedor"
+                    className="w-full"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="cuit">CUIT *</Label>
+                  <Input
+                    id="cuit"
+                    name="cuit"
+                    value={formData.cuit}
+                    onChange={handleInputChange}
+                    placeholder="XX-XXXXXXXX-X"
+                    className="w-full"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tipo_iva_id">Tipo IVA</Label>
+                  <Select 
+                    onValueChange={handleSelectChange} 
+                    value={formData.tipo_iva_id || ""}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Seleccione tipo de IVA" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {tiposIva.map(tipo => (
+                        <SelectItem key={tipo.id} value={tipo.id}>
+                          {tipo.nombre}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="contacto">Persona de Contacto</Label>
+                  <Input
+                    id="contacto"
+                    name="contacto"
+                    value={formData.contacto}
+                    onChange={handleInputChange}
+                    placeholder="Ingrese el nombre de contacto"
+                    className="w-full"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="correo">Correo</Label>
+                  <Input
+                    id="correo"
+                    name="correo"
+                    type="email"
+                    value={formData.correo}
+                    onChange={handleInputChange}
+                    placeholder="correo@ejemplo.com"
+                    className="w-full"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="telefono">Teléfono</Label>
+                  <Input
+                    id="telefono"
+                    name="telefono"
+                    type="tel"
+                    value={formData.telefono}
+                    onChange={handleInputChange}
+                    placeholder="Ingrese el número de teléfono"
+                    className="w-full"
+                  />
+                </div>
+                <div className="col-span-1 sm:col-span-2 space-y-2">
+                  <Label htmlFor="direccion">Dirección</Label>
+                  <Input
+                    id="direccion"
+                    name="direccion"
+                    value={formData.direccion}
+                    onChange={handleInputChange}
+                    placeholder="Ingrese la dirección del proveedor"
+                    className="w-full"
+                  />
+                </div>
+                <div className="col-span-1 sm:col-span-2 space-y-2">
+                  <Label htmlFor="observaciones">Observaciones</Label>
+                  <Textarea
+                    id="observaciones"
+                    name="observaciones"
+                    value={formData.observaciones}
+                    onChange={handleInputChange}
+                    placeholder="Ingrese cualquier observación adicional"
+                    className="w-full"
+                    rows={3}
+                  />
+                </div>
+              </div>
+              {formError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{formError}</AlertDescription>
+                </Alert>
+              )}
+              <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-0">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setIsDialogOpen(false)}
+                  className="w-full sm:w-auto sm:mr-2"
+                >
+                  Cancelar
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={isSubmitting} 
+                  className="bg-blue-500 text-white hover:bg-blue-600 w-full sm:w-auto"
+                >
+                  {isSubmitting && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  Guardar Proveedor
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
       <Card className="shadow-lg rounded-lg">
         <CardHeader>
@@ -356,7 +360,7 @@ const Providers: React.FC = () => {
           <div className="flex justify-between mb-4">
             <Input 
               placeholder="Buscar proveedor..." 
-              className="max-w-sm"
+              className="w-full max-w-sm"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -371,17 +375,17 @@ const Providers: React.FC = () => {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto -mx-4 sm:mx-0">
               <Table className="min-w-full">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nombre</TableHead>
-                    <TableHead>CUIT</TableHead>
-                    <TableHead>Tipo IVA</TableHead>
-                    <TableHead>Contacto</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Teléfono</TableHead>
-                    <TableHead>Dirección</TableHead>
+                    <TableHead className="hidden sm:table-cell">CUIT</TableHead>
+                    <TableHead className="hidden md:table-cell">Tipo IVA</TableHead>
+                    <TableHead className="hidden md:table-cell">Contacto</TableHead>
+                    <TableHead className="hidden lg:table-cell">Email</TableHead>
+                    <TableHead className="hidden lg:table-cell">Teléfono</TableHead>
+                    <TableHead className="hidden xl:table-cell">Dirección</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -396,19 +400,21 @@ const Providers: React.FC = () => {
                     filteredProveedores.map((proveedor) => (
                       <TableRow key={proveedor.id} className="hover:bg-gray-50 transition-colors">
                         <TableCell className="font-medium">{proveedor.nombre}</TableCell>
-                        <TableCell>{proveedor.cuit}</TableCell>
-                        <TableCell>{getTipoIvaNombre(proveedor.tipo_iva_id)}</TableCell>
-                        <TableCell>{proveedor.contacto || "-"}</TableCell>
-                        <TableCell>{proveedor.correo || "-"}</TableCell>
-                        <TableCell>{proveedor.telefono || "-"}</TableCell>
-                        <TableCell>{proveedor.direccion || "-"}</TableCell>
+                        <TableCell className="hidden sm:table-cell">{proveedor.cuit}</TableCell>
+                        <TableCell className="hidden md:table-cell">{getTipoIvaNombre(proveedor.tipo_iva_id)}</TableCell>
+                        <TableCell className="hidden md:table-cell">{proveedor.contacto || "-"}</TableCell>
+                        <TableCell className="hidden lg:table-cell">{proveedor.correo || "-"}</TableCell>
+                        <TableCell className="hidden lg:table-cell">{proveedor.telefono || "-"}</TableCell>
+                        <TableCell className="hidden xl:table-cell">{proveedor.direccion || "-"}</TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" className="mr-2 hover:bg-gray-200">
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="hover:bg-gray-200">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="icon" className="hover:bg-gray-200">
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="hover:bg-gray-200">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))

@@ -181,78 +181,80 @@ const LoanDetails = () => {
   };
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-          <CardTitle>Detalle de Préstamos y Cuotas</CardTitle>
-          <Button variant="outline" onClick={exportToExcel}>
-            <Download className="mr-2 h-4 w-4" /> Exportar
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col space-y-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
-              <Input
-                placeholder="Buscar por cliente..."
-                className="pl-8"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            {filteredPrestamos.some(p => p.cuotas.some(c => c.estado === 'VENCIDO')) && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  Hay cuotas vencidas que requieren atención inmediata.
-                </AlertDescription>
-              </Alert>
-            )}
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead></TableHead>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>DNI</TableHead>
-                    <TableHead className="text-right">Monto Total</TableHead>
-                    <TableHead className="text-right">Cuotas Pagadas</TableHead>
-                    <TableHead>Progreso</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredPrestamos.map(prestamo => (
-                    <React.Fragment key={prestamo.id}>
-                      <TableRow 
-                        className="cursor-pointer hover:bg-slate-50"
-                        onClick={() => toggleExpanded(prestamo.id)}
-                      >
-                        <TableCell>
-                          {expandedPrestamos.includes(prestamo.id) ? 
-                            <ChevronDown className="h-4 w-4" /> : 
-                            <ChevronRight className="h-4 w-4" />}
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {`${prestamo.cliente.nombre} ${prestamo.cliente.apellido}`}
-                        </TableCell>
-                        <TableCell>{prestamo.cliente.dni}</TableCell>
-                        <TableCell className="text-right">
-                          ${prestamo.monto_total.toLocaleString('es-AR')}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {prestamo.cuotas_pagadas}/{prestamo.cantidad_cuotas}
-                        </TableCell>
-                        <TableCell>
-                          <div className="w-full bg-slate-200 rounded-full h-2.5">
-                            <div 
-                              className="bg-blue-600 h-2.5 rounded-full"
-                              style={{ width: `${(prestamo.cuotas_pagadas / prestamo.cantidad_cuotas) * 100}%` }}
-                            ></div>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                      {expandedPrestamos.includes(prestamo.id) && prestamo.cuotas.map(cuota => (
-                        <TableRow key={cuota.id} className="bg-slate-50">
+  <div className="space-y-4">
+    <Card>
+      <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0 pb-4">
+        <CardTitle>Detalle de Préstamos y Cuotas</CardTitle>
+        <Button variant="outline" onClick={exportToExcel} className="w-full sm:w-auto">
+          <Download className="mr-2 h-4 w-4" /> Exportar
+        </Button>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-col space-y-4">
+          <div className="flex-1 relative">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+            <Input
+              placeholder="Buscar por cliente..."
+              className="pl-8"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          {filteredPrestamos.some(p => p.cuotas.some(c => c.estado === 'VENCIDO')) && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Hay cuotas vencidas que requieren atención inmediata.
+              </AlertDescription>
+            </Alert>
+          )}
+          
+          {/* Tabla para pantallas medianas y grandes */}
+          <div className="hidden md:block rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead></TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>DNI</TableHead>
+                  <TableHead className="text-right">Monto Total</TableHead>
+                  <TableHead className="text-right">Cuotas Pagadas</TableHead>
+                  <TableHead>Progreso</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredPrestamos.map(prestamo => (
+                  <React.Fragment key={prestamo.id}>
+                    <TableRow 
+                      className="cursor-pointer hover:bg-slate-50"
+                      onClick={() => toggleExpanded(prestamo.id)}
+                    >
+                      <TableCell>
+                        {expandedPrestamos.includes(prestamo.id) ? 
+                          <ChevronDown className="h-4 w-4" /> : 
+                          <ChevronRight className="h-4 w-4" />}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {`${prestamo.cliente.nombre} ${prestamo.cliente.apellido}`}
+                      </TableCell>
+                      <TableCell>{prestamo.cliente.dni}</TableCell>
+                      <TableCell className="text-right">
+                        ${prestamo.monto_total.toLocaleString('es-AR')}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {prestamo.cuotas_pagadas}/{prestamo.cantidad_cuotas}
+                      </TableCell>
+                      <TableCell>
+                        <div className="w-full bg-slate-200 rounded-full h-2.5">
+                          <div 
+                            className="bg-blue-600 h-2.5 rounded-full"
+                            style={{ width: `${(prestamo.cuotas_pagadas / prestamo.cantidad_cuotas) * 100}%` }}
+                          ></div>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {expandedPrestamos.includes(prestamo.id) && prestamo.cuotas.map(cuota => (
+                      <TableRow key={cuota.id} className="bg-slate-50">
                         <TableCell></TableCell>
                         <TableCell colSpan={2} className="text-sm">
                           Cuota {cuota.numero_cuota}
@@ -266,43 +268,133 @@ const LoanDetails = () => {
                             '-'}
                         </TableCell>
                         <TableCell>
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getEstadoColor(cuota.estado)}`}>
-                            {cuota.estado}
-                          </span>
-                          
-                          {cuota.estado !== 'PAGADO' && (
-  <>
-    <Button onClick={() => setOpen(true)}>
-      Pagar
-    </Button>
-    <PagarDialog
-      open={open}
-      onOpenChange={setOpen}
-      onConfirm={() => {
-        // Recargar los datos después del pago
-        fetchData();
-        setOpen(false);
-      }}
-      numeroCuota={cuota.numero_cuota}
-      cuotaId={cuota.id}
-      prestamoId={prestamo.id}
-      montoCuota={cuota.monto}
-    />
-  </>
-)}
+                          <div className="flex items-center space-x-2">
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getEstadoColor(cuota.estado)}`}>
+                              {cuota.estado}
+                            </span>
+                            
+                            {cuota.estado !== 'PAGADO' && (
+                              <>
+                                <Button 
+                                  size="sm"
+                                  onClick={() => setOpen(true)}
+                                >
+                                  Pagar
+                                </Button>
+                                <PagarDialog
+                                  open={open}
+                                  onOpenChange={setOpen}
+                                  onConfirm={() => {
+                                    // Recargar los datos después del pago
+                                    fetchData();
+                                    setOpen(false);
+                                  }}
+                                  numeroCuota={cuota.numero_cuota}
+                                  cuotaId={cuota.id}
+                                  prestamoId={prestamo.id}
+                                  montoCuota={cuota.monto}
+                                />
+                              </>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
-                      ))}
-                    </React.Fragment>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                    ))}
+                  </React.Fragment>
+                ))}
+              </TableBody>
+            </Table>
           </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
+          
+          {/* Vista de tarjetas para móviles */}
+          <div className="block md:hidden space-y-4">
+            {filteredPrestamos.map(prestamo => (
+              <div key={prestamo.id} className="border rounded-lg shadow-sm overflow-hidden">
+                <div 
+                  className="flex items-center justify-between p-4 cursor-pointer bg-white hover:bg-slate-50"
+                  onClick={() => toggleExpanded(prestamo.id)}
+                >
+                  <div className="flex items-center space-x-2">
+                    {expandedPrestamos.includes(prestamo.id) ? 
+                      <ChevronDown className="h-4 w-4 flex-shrink-0" /> : 
+                      <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+                    <div>
+                      <div className="font-medium">{`${prestamo.cliente.nombre} ${prestamo.cliente.apellido}`}</div>
+                      <div className="text-sm text-slate-500">DNI: {prestamo.cliente.dni}</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-medium">${prestamo.monto_total.toLocaleString('es-AR')}</div>
+                    <div className="text-sm text-slate-500">
+                      {prestamo.cuotas_pagadas}/{prestamo.cantidad_cuotas} cuotas
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="px-4 pb-2">
+                  <div className="w-full bg-slate-200 rounded-full h-2.5">
+                    <div 
+                      className="bg-blue-600 h-2.5 rounded-full"
+                      style={{ width: `${(prestamo.cuotas_pagadas / prestamo.cantidad_cuotas) * 100}%` }}
+                    ></div>
+                  </div>
+                </div>
+                
+                {expandedPrestamos.includes(prestamo.id) && (
+                  <div className="bg-slate-50 divide-y divide-slate-200">
+                    {prestamo.cuotas.map(cuota => (
+                      <div key={cuota.id} className="p-4">
+                        <div className="flex justify-between items-center mb-2">
+                          <div className="font-medium">Cuota {cuota.numero_cuota}</div>
+                          <div className="font-medium">${cuota.monto.toLocaleString('es-AR')}</div>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <div className="text-sm text-slate-500">
+                            {cuota.fecha_pago ? 
+                              `Pagado: ${new Date(cuota.fecha_pago).toLocaleDateString('es-AR')}` : 
+                              'No pagado'}
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getEstadoColor(cuota.estado)}`}>
+                              {cuota.estado}
+                            </span>
+                            
+                            {cuota.estado !== 'PAGADO' && (
+                              <>
+                                <Button 
+                                  size="sm"
+                                  onClick={() => setOpen(true)}
+                                >
+                                  Pagar
+                                </Button>
+                                <PagarDialog
+                                  open={open}
+                                  onOpenChange={setOpen}
+                                  onConfirm={() => {
+                                    fetchData();
+                                    setOpen(false);
+                                  }}
+                                  numeroCuota={cuota.numero_cuota}
+                                  cuotaId={cuota.id}
+                                  prestamoId={prestamo.id}
+                                  montoCuota={cuota.monto}
+                                />
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  </div>
+);
 };
 
 export default LoanDetails;

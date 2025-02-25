@@ -216,27 +216,26 @@ const LoanSimulator: React.FC = () => {
           <CardTitle>Simulador de Préstamos</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {/* Formulario responsive */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <div className="space-y-2">
-            <label className="text-sm font-medium">Empresa</label>
-<Select value={empresa} onValueChange={setEmpresa}>
-  <SelectTrigger>
-    <SelectValue>{empresa}</SelectValue>
-  </SelectTrigger>
-  <SelectContent>
-    {/* Opción "placeholder" con un valor especial */}
-    <SelectItem value="placeholder" disabled>
-      Seleccionar empresa
-    </SelectItem>
-    {proveedores.map((proveedor) => (
-      <SelectItem key={proveedor.id} value={proveedor.nombre}>
-        {proveedor.nombre}
-      </SelectItem>
-    ))}
-  </SelectContent>
-</Select>
-
-
+              <label className="text-sm font-medium">Empresa</label>
+              <Select value={empresa} onValueChange={setEmpresa}>
+                <SelectTrigger className="w-full">
+                  <SelectValue>{empresa}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {/* Opción "placeholder" con un valor especial */}
+                  <SelectItem value="placeholder" disabled>
+                    Seleccionar empresa
+                  </SelectItem>
+                  {proveedores.map((proveedor) => (
+                    <SelectItem key={proveedor.id} value={proveedor.nombre}>
+                      {proveedor.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             
             <div className="space-y-2">
@@ -247,9 +246,9 @@ const LoanSimulator: React.FC = () => {
                 value={monto}
                 onChange={(e) => setMonto(Number(e.target.value))}
                 placeholder="Ingrese el monto"
+                className="w-full"
               />
             </div>
-
             <div className="space-y-2">
               <label className="text-sm font-medium">Frecuencia de Pago</label>
               <Select 
@@ -259,7 +258,7 @@ const LoanSimulator: React.FC = () => {
                   ajustarPlazo(v);
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Seleccionar frecuencia" />
                 </SelectTrigger>
                 <SelectContent>
@@ -268,14 +267,13 @@ const LoanSimulator: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
-
             <div className="space-y-2">
               <label className="text-sm font-medium">Plazo</label>
               <Select 
                 value={plazo.toString()} 
                 onValueChange={(v) => setPlazo(Number(v))}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Seleccionar plazo" />
                 </SelectTrigger>
                 <SelectContent>
@@ -287,7 +285,6 @@ const LoanSimulator: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
-
             <div className="space-y-2">
               <label className="text-sm font-medium">Tasa de Interés Anual (%)</label>
               <Input
@@ -297,10 +294,10 @@ const LoanSimulator: React.FC = () => {
                 value={tasaInteres}
                 onChange={(e) => setTasaInteres(Number(e.target.value))}
                 placeholder="Ingrese la tasa"
+                className="w-full"
               />
             </div>
-
-            <div className="space-y-2 col-span-2">
+            <div className="space-y-2 col-span-1 sm:col-span-2">
               <div className="flex items-center space-x-2">
                 <Checkbox 
                   id="aplicarIVA" 
@@ -310,7 +307,6 @@ const LoanSimulator: React.FC = () => {
                 <Label htmlFor="aplicarIVA">Aplicar IVA sobre el interés</Label>
               </div>
             </div>
-
             {aplicarIVA && (
               <div className="space-y-2">
                 <label className="text-sm font-medium">Porcentaje de IVA (%)</label>
@@ -321,20 +317,32 @@ const LoanSimulator: React.FC = () => {
                   value={porcentajeIVA}
                   onChange={(e) => setPorcentajeIVA(Number(e.target.value))}
                   placeholder="Ingrese el porcentaje de IVA"
+                  className="w-full"
                 />
               </div>
             )}
           </div>
-
-          <div className="flex justify-between items-center mb-6">
-            <Button onClick={calcularCuotas}>
-              <Calculator className="mr-2 h-4 w-4" />
-              Calcular
-            </Button>
-            <Button onClick={() => setOpen(true)}>
-              <Calculator className="mr-2 h-4 w-4" />
-              Generar Préstamo
-            </Button>
+  
+          {/* Botones responsivos */}
+          <div className="flex flex-col sm:flex-row sm:justify-between gap-4 mb-6">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Button onClick={calcularCuotas} className="w-full sm:w-auto">
+                <Calculator className="mr-2 h-4 w-4" />
+                Calcular
+              </Button>
+              <Button onClick={() => setOpen(true)} className="w-full sm:w-auto">
+                <Calculator className="mr-2 h-4 w-4" />
+                Generar Préstamo
+              </Button>
+            </div>
+            
+            {cuotas.length > 0 && (
+              <Button variant="outline" onClick={exportToExcel} className="w-full sm:w-auto">
+                <Download className="mr-2 h-4 w-4" />
+                Exportar
+              </Button>
+            )}
+            
             <GenerarPrestamo
               open={open}
               onOpenChange={setOpen}
@@ -360,21 +368,15 @@ const LoanSimulator: React.FC = () => {
                 }))
               }}
             />
-            
-            {cuotas.length > 0 && (
-              <Button variant="outline" onClick={exportToExcel}>
-                <Download className="mr-2 h-4 w-4" />
-                Exportar
-              </Button>
-            )}
           </div>
-
+  
+          {/* Tarjetas responsive */}
           {cuotas.length > 0 && (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                 <Card>
                   <CardContent className="pt-6">
-                    <div className="text-2xl font-bold text-green-600">
+                    <div className="text-xl sm:text-2xl font-bold text-green-600">
                       ${Math.round(cuotaPeriodica).toLocaleString('es-AR')}
                     </div>
                     <div className="text-sm text-slate-500">
@@ -384,7 +386,7 @@ const LoanSimulator: React.FC = () => {
                 </Card>
                 <Card>
                   <CardContent className="pt-6">
-                    <div className="text-2xl font-bold text-blue-600">
+                    <div className="text-xl sm:text-2xl font-bold text-blue-600">
                       ${Math.round(montoTotal).toLocaleString('es-AR')}
                     </div>
                     <div className="text-sm text-slate-500">Monto Total a Pagar</div>
@@ -392,7 +394,7 @@ const LoanSimulator: React.FC = () => {
                 </Card>
                 <Card>
                   <CardContent className="pt-6">
-                    <div className="text-2xl font-bold text-purple-600">
+                    <div className="text-xl sm:text-2xl font-bold text-purple-600">
                       ${Math.round(montoTotal - monto).toLocaleString('es-AR')}
                     </div>
                     <div className="text-sm text-slate-500">
@@ -401,8 +403,9 @@ const LoanSimulator: React.FC = () => {
                   </CardContent>
                 </Card>
               </div>
-
-              <div className="rounded-md border">
+  
+              {/* Tabla responsive */}
+              <div className="rounded-md border overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -457,5 +460,5 @@ const LoanSimulator: React.FC = () => {
     </div>
   );
 };
-
-export default LoanSimulator;
+  
+  export default LoanSimulator;

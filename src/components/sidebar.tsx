@@ -99,35 +99,41 @@ const Sidebar = () => {
 
   if (!user) return null;
 
-  const NavLink: React.FC<NavLinkProps> = ({ item, collapsed }) => (
-    <Link href={item.href}>
-      <div
-        className={cn(
-          "group flex items-center p-2 rounded-lg transition-all duration-150",
-          "hover:bg-blue-50 dark:hover:bg-blue-950",
-          pathname === item.href ? "bg-blue-100 dark:bg-blue-900" : "",
-          collapsed ? "justify-center" : ""
-        )}
-      >
-        <item.icon 
+  const NavLink: React.FC<NavLinkProps> = ({ item, collapsed }) => {
+    const handleClick = () => {
+      if (window.innerWidth < 1024) setIsOpen(false); // Cierra el sidebar en mobile
+    };
+  
+    return (
+      <Link href={item.href} onClick={handleClick}>
+        <div
           className={cn(
-            "w-5 h-5 transition-colors",
-            pathname === item.href ? "text-blue-600 dark:text-blue-400" : "text-gray-600 dark:text-gray-400",
-            "group-hover:text-blue-600 dark:group-hover:text-blue-400"
+            "group flex items-center p-2 rounded-lg transition-all duration-150",
+            "hover:bg-blue-50 dark:hover:bg-blue-950",
+            pathname === item.href ? "bg-blue-100 dark:bg-blue-900" : "",
+            collapsed ? "justify-center" : ""
           )}
-        />
-        {!collapsed && (
-          <span className={cn(
-            "ml-3 text-sm font-medium transition-colors",
-            pathname === item.href ? "text-blue-600 dark:text-blue-400" : "text-gray-700 dark:text-gray-300",
-            "group-hover:text-blue-600 dark:group-hover:text-blue-400"
-          )}>
-            {item.name}
-          </span>
-        )}
-      </div>
-    </Link>
-  );
+        >
+          <item.icon 
+            className={cn(
+              "w-5 h-5 transition-colors",
+              pathname === item.href ? "text-blue-600 dark:text-blue-400" : "text-gray-600 dark:text-gray-400",
+              "group-hover:text-blue-600 dark:group-hover:text-blue-400"
+            )}
+          />
+          {!collapsed && (
+            <span className={cn(
+              "ml-3 text-sm font-medium transition-colors",
+              pathname === item.href ? "text-blue-600 dark:text-blue-400" : "text-gray-700 dark:text-gray-300",
+              "group-hover:text-blue-600 dark:group-hover:text-blue-400"
+            )}>
+              {item.name}
+            </span>
+          )}
+        </div>
+      </Link>
+    );
+  };
 
   const SidebarContent = ({ collapsed = false }) => (
     <div className="flex flex-col h-full">
@@ -143,7 +149,7 @@ const Sidebar = () => {
         <Button
           variant="ghost"
           size="sm"
-          className="p-2"
+          className="p-2 hidden lg:block"
           onClick={() => setIsCollapsed(!isCollapsed)}
         >
           <ChevronLeft className={cn(

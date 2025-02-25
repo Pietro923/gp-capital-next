@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface MovimientoCaja {
   id: string;
@@ -168,39 +169,44 @@ const CashRegister: React.FC = () => {
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+        <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0 pb-4">
           <CardTitle>Movimientos de Caja</CardTitle>
           <div className="flex space-x-2">
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
-                <Button variant="outline">
+                <Button variant="outline" className="w-full sm:w-auto">
                   Nuevo Movimiento
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
+              <DialogContent className="sm:max-w-md max-w-[95vw] p-4 sm:p-6">
                 <DialogHeader>
                   <DialogTitle>Nuevo Movimiento</DialogTitle>
                   <DialogDescription>
                     Registre un nuevo ingreso o egreso
                   </DialogDescription>
                 </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-4 mt-2">
                   <div className="space-y-2">
-                    <Label>Tipo de Movimiento</Label>
-                    <select
+                    <Label htmlFor="tipo-movimiento">Tipo de Movimiento</Label>
+                    <Select
                       value={formData.tipo}
-                      onChange={(e) =>
-                        handleSelectChange(e.target.value as "INGRESO" | "EGRESO")
+                      onValueChange={(value) => 
+                        handleSelectChange(value as "INGRESO" | "EGRESO")
                       }
-                      className="w-full p-2 border rounded"
                     >
-                      <option value="INGRESO">Ingreso</option>
-                      <option value="EGRESO">Egreso</option>
-                    </select>
+                      <SelectTrigger id="tipo-movimiento" className="w-full">
+                        <SelectValue placeholder="Seleccionar tipo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="INGRESO">Ingreso</SelectItem>
+                        <SelectItem value="EGRESO">Egreso</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Concepto</Label>
+                    <Label htmlFor="concepto">Concepto</Label>
                     <Input
+                      id="concepto"
                       name="concepto"
                       required
                       value={formData.concepto}
@@ -208,8 +214,9 @@ const CashRegister: React.FC = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Monto</Label>
+                    <Label htmlFor="monto">Monto</Label>
                     <Input
+                      id="monto"
                       name="monto"
                       type="number"
                       required
@@ -217,22 +224,25 @@ const CashRegister: React.FC = () => {
                       onChange={handleInputChange}
                     />
                   </div>
-
                   {formError && (
                     <Alert variant="destructive">
                       <AlertDescription>{formError}</AlertDescription>
                     </Alert>
                   )}
-
-                  <DialogFooter>
+                  <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-0 mt-4">
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => setIsDialogOpen(false)}
+                      className="w-full sm:w-auto"
                     >
                       Cancelar
                     </Button>
-                    <Button type="submit" disabled={isSubmitting}>
+                    <Button 
+                      type="submit" 
+                      disabled={isSubmitting}
+                      className="w-full sm:w-auto"
+                    >
                       {isSubmitting && (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       )}
@@ -257,11 +267,11 @@ const CashRegister: React.FC = () => {
                 />
               </div>
             </div>
-            <div className="rounded-md border">
+            <div className="rounded-md border overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Fecha</TableHead>
+                    <TableHead className="hidden sm:table-cell">Fecha</TableHead>
                     <TableHead>Tipo</TableHead>
                     <TableHead>Concepto</TableHead>
                     <TableHead>Monto</TableHead>
@@ -270,7 +280,7 @@ const CashRegister: React.FC = () => {
                 <TableBody>
                   {filteredMovimientos.map((movimiento) => (
                     <TableRow key={movimiento.id} className="hover:bg-slate-50">
-                      <TableCell>
+                      <TableCell className="hidden sm:table-cell">
                         {new Date(movimiento.fecha_movimiento).toLocaleDateString()}
                       </TableCell>
                       <TableCell
@@ -282,7 +292,9 @@ const CashRegister: React.FC = () => {
                       >
                         {movimiento.tipo}
                       </TableCell>
-                      <TableCell>{movimiento.concepto}</TableCell>
+                      <TableCell className="max-w-[150px] sm:max-w-none truncate">
+                        {movimiento.concepto}
+                      </TableCell>
                       <TableCell>${movimiento.monto.toLocaleString()}</TableCell>
                     </TableRow>
                   ))}
@@ -292,7 +304,6 @@ const CashRegister: React.FC = () => {
           </div>
         </CardContent>
       </Card>
-
       <Card>
         <CardHeader>
           <CardTitle>Saldo Actual</CardTitle>

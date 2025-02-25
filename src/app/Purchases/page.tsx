@@ -232,7 +232,7 @@ export default function Purchases() {
           <CardTitle>Nueva Compra</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Proveedor</Label>
               <Select 
@@ -290,10 +290,10 @@ export default function Purchases() {
                 <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-gray-500" />
               </div>
             </div>
-            <div className="col-span-2">
+            <div className="col-span-1 sm:col-span-2">
               {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
             </div>
-            <div className="col-span-2">
+            <div className="col-span-1 sm:col-span-2">
               <Button 
                 className="w-full" 
                 onClick={handleSubmit}
@@ -305,38 +305,39 @@ export default function Purchases() {
           </div>
         </CardContent>
       </Card>
-
       <Card>
         <CardHeader>
           <CardTitle>Historial de Compras</CardTitle>
         </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Fecha</TableHead>
-                <TableHead>Proveedor</TableHead>
-                <TableHead>Producto</TableHead>
-                <TableHead>Monto</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {purchases.map((purchase) => (
-                <TableRow key={purchase.id}>
-                  <TableCell>{purchase.date}</TableCell>
-                  <TableCell>{purchase.provider}</TableCell>
-                  <TableCell>{purchase.product}</TableCell>
-                  <TableCell>${purchase.amount.toLocaleString()}</TableCell>
-                  <TableCell>{purchase.status}</TableCell>
-                  <TableCell>
-                    <Button variant="outline" size="sm">Ver detalle</Button>
-                  </TableCell>
+        <CardContent className="p-0 sm:p-6">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="hidden sm:table-cell">Fecha</TableHead>
+                  <TableHead>Proveedor</TableHead>
+                  <TableHead className="hidden md:table-cell">Producto</TableHead>
+                  <TableHead>Monto</TableHead>
+                  <TableHead className="hidden sm:table-cell">Estado</TableHead>
+                  <TableHead>Acciones</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {purchases.map((purchase) => (
+                  <TableRow key={purchase.id}>
+                    <TableCell className="hidden sm:table-cell">{purchase.date}</TableCell>
+                    <TableCell className="font-medium">{purchase.provider}</TableCell>
+                    <TableCell className="hidden md:table-cell">{purchase.product}</TableCell>
+                    <TableCell>${purchase.amount.toLocaleString()}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{purchase.status}</TableCell>
+                    <TableCell>
+                      <Button variant="outline" size="sm" className="w-full sm:w-auto">Ver detalle</Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
     </div>
