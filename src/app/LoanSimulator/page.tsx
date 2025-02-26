@@ -24,7 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Calculator, Download } from "lucide-react";
+import { Calculator, Download, ChevronRight, ChevronDown } from "lucide-react";
 import { GenerarPrestamo } from "@/components/GenerarPrestamo";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -39,6 +39,7 @@ interface CuotaSimulada {
   cuota: number;
   capitalRestante: number;
 }
+
 // Interfaces ajustadas según el esquema de la base de datos
 interface Proveedor {
   id: string; // Cambiado a string para UUID
@@ -68,6 +69,7 @@ const LoanSimulator: React.FC = () => {
   const [cuotaPeriodica, setCuotaPeriodica] = useState<number>(0);
   const [montoTotal, setMontoTotal] = useState<number>(0);
   const [open, setOpen] = useState(false);
+  const [expandedCuota, setExpandedCuota] = useState<number | null>(null);
   
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [, setIsLoading] = useState(true);
@@ -95,7 +97,6 @@ const LoanSimulator: React.FC = () => {
     
     fetchProveedores();
   }, []);
-
 
   // Función para obtener los plazos basados en la frecuencia
   const getPlazosDisponibles = () => {
@@ -159,7 +160,6 @@ const LoanSimulator: React.FC = () => {
       capitalPendiente -= capitalCuota;
       
       montoTotalCalculado += cuotaFinal;
-
       nuevasCuotas.push({
         numero: i,
         fechaVencimiento: fecha.toISOString().split('T')[0],
@@ -170,7 +170,6 @@ const LoanSimulator: React.FC = () => {
         capitalRestante: capitalPendiente
       });
     }
-
     setCuotas(nuevasCuotas);
     setCuotaPeriodica(nuevasCuotas[0].cuota);
     setMontoTotal(montoTotalCalculado);
@@ -186,11 +185,9 @@ const LoanSimulator: React.FC = () => {
       'Cuota Total': Math.round(cuota.cuota),
       'Capital Restante': Math.round(cuota.capitalRestante)
     }));
-
     let csvContent = '\ufeff';
     const headers = Object.keys(excelData[0]);
     csvContent += headers.join(';') + '\n';
-
     excelData.forEach(row => {
       const values = headers.map(header => {
         const value = row[header];
@@ -198,7 +195,6 @@ const LoanSimulator: React.FC = () => {
       });
       csvContent += values.join(';') + '\n';
     });
-
     const blob = new Blob([csvContent], { type: 'application/vnd.ms-excel;charset=utf-8' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
@@ -209,6 +205,14 @@ const LoanSimulator: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  const toggleCuotaDetails = (numero: number) => {
+    if (expandedCuota === numero) {
+      setExpandedCuota(null);
+    } else {
+      setExpandedCuota(numero);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card>
@@ -216,12 +220,11 @@ const LoanSimulator: React.FC = () => {
           <CardTitle>Simulador de Préstamos</CardTitle>
         </CardHeader>
         <CardContent>
-          {/* Formulario responsive */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <div className="space-y-2">
               <label className="text-sm font-medium">Empresa</label>
               <Select value={empresa} onValueChange={setEmpresa}>
-                <SelectTrigger className="w-full">
+                <SelectTrigger>
                   <SelectValue>{empresa}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
@@ -246,7 +249,6 @@ const LoanSimulator: React.FC = () => {
                 value={monto}
                 onChange={(e) => setMonto(Number(e.target.value))}
                 placeholder="Ingrese el monto"
-                className="w-full"
               />
             </div>
             <div className="space-y-2">
@@ -258,7 +260,7 @@ const LoanSimulator: React.FC = () => {
                   ajustarPlazo(v);
                 }}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger>
                   <SelectValue placeholder="Seleccionar frecuencia" />
                 </SelectTrigger>
                 <SelectContent>
@@ -273,7 +275,7 @@ const LoanSimulator: React.FC = () => {
                 value={plazo.toString()} 
                 onValueChange={(v) => setPlazo(Number(v))}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger>
                   <SelectValue placeholder="Seleccionar plazo" />
                 </SelectTrigger>
                 <SelectContent>
@@ -294,10 +296,9 @@ const LoanSimulator: React.FC = () => {
                 value={tasaInteres}
                 onChange={(e) => setTasaInteres(Number(e.target.value))}
                 placeholder="Ingrese la tasa"
-                className="w-full"
               />
             </div>
-            <div className="space-y-2 col-span-1 sm:col-span-2">
+            <div className="space-y-2 col-span-2">
               <div className="flex items-center space-x-2">
                 <Checkbox 
                   id="aplicarIVA" 
@@ -317,32 +318,23 @@ const LoanSimulator: React.FC = () => {
                   value={porcentajeIVA}
                   onChange={(e) => setPorcentajeIVA(Number(e.target.value))}
                   placeholder="Ingrese el porcentaje de IVA"
-                  className="w-full"
                 />
               </div>
             )}
           </div>
-  
+          
           {/* Botones responsivos */}
-          <div className="flex flex-col sm:flex-row sm:justify-between gap-4 mb-6">
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Button onClick={calcularCuotas} className="w-full sm:w-auto">
-                <Calculator className="mr-2 h-4 w-4" />
-                Calcular
-              </Button>
-              <Button onClick={() => setOpen(true)} className="w-full sm:w-auto">
-                <Calculator className="mr-2 h-4 w-4" />
-                Generar Préstamo
-              </Button>
-            </div>
-            
-            {cuotas.length > 0 && (
-              <Button variant="outline" onClick={exportToExcel} className="w-full sm:w-auto">
-                <Download className="mr-2 h-4 w-4" />
-                Exportar
-              </Button>
-            )}
-            
+          <div className="flex flex-wrap gap-2 justify-between items-center mb-6">
+            <Button onClick={calcularCuotas}>
+              <Calculator className="mr-2 h-4 w-4" />
+              <span className="hidden sm:inline">Calcular</span>
+              <span className="sm:hidden">Calc</span>
+            </Button>
+            <Button onClick={() => setOpen(true)}>
+              <Calculator className="mr-2 h-4 w-4" />
+              <span className="hidden sm:inline">Generar Préstamo</span>
+              <span className="sm:hidden">Generar</span>
+            </Button>
             <GenerarPrestamo
               open={open}
               onOpenChange={setOpen}
@@ -368,15 +360,23 @@ const LoanSimulator: React.FC = () => {
                 }))
               }}
             />
+            
+            {cuotas.length > 0 && (
+              <Button variant="outline" onClick={exportToExcel}>
+                <Download className="mr-2 h-4 w-4" />
+                <span className="hidden sm:inline">Exportar</span>
+                <span className="sm:hidden">Exp</span>
+              </Button>
+            )}
           </div>
-  
-          {/* Tarjetas responsive */}
+          
           {cuotas.length > 0 && (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              {/* Cards responsivas */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Card>
                   <CardContent className="pt-6">
-                    <div className="text-xl sm:text-2xl font-bold text-green-600">
+                    <div className="text-2xl font-bold text-green-600">
                       ${Math.round(cuotaPeriodica).toLocaleString('es-AR')}
                     </div>
                     <div className="text-sm text-slate-500">
@@ -386,7 +386,7 @@ const LoanSimulator: React.FC = () => {
                 </Card>
                 <Card>
                   <CardContent className="pt-6">
-                    <div className="text-xl sm:text-2xl font-bold text-blue-600">
+                    <div className="text-2xl font-bold text-blue-600">
                       ${Math.round(montoTotal).toLocaleString('es-AR')}
                     </div>
                     <div className="text-sm text-slate-500">Monto Total a Pagar</div>
@@ -394,7 +394,7 @@ const LoanSimulator: React.FC = () => {
                 </Card>
                 <Card>
                   <CardContent className="pt-6">
-                    <div className="text-xl sm:text-2xl font-bold text-purple-600">
+                    <div className="text-2xl font-bold text-purple-600">
                       ${Math.round(montoTotal - monto).toLocaleString('es-AR')}
                     </div>
                     <div className="text-sm text-slate-500">
@@ -403,9 +403,9 @@ const LoanSimulator: React.FC = () => {
                   </CardContent>
                 </Card>
               </div>
-  
-              {/* Tabla responsive */}
-              <div className="rounded-md border overflow-x-auto">
+              
+              {/* Vista de tabla para escritorio */}
+              <div className="hidden md:block rounded-md border">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -453,6 +453,64 @@ const LoanSimulator: React.FC = () => {
                   </TableBody>
                 </Table>
               </div>
+              
+              {/* Vista acordeón para móviles */}
+              <div className="md:hidden space-y-2">
+                {cuotas.map((cuota) => (
+                  <Card key={cuota.numero} className="overflow-hidden">
+                    <div 
+                      className="flex justify-between items-center p-4 cursor-pointer"
+                      onClick={() => toggleCuotaDetails(cuota.numero)}
+                    >
+                      <div className="flex items-center">
+                        <Badge variant="outline" className="mr-2">
+                          {cuota.numero}
+                        </Badge>
+                        <span>{new Date(cuota.fechaVencimiento).toLocaleDateString('es-AR')}</span>
+                      </div>
+                      <div className="flex items-center">
+                        <span className="font-medium mr-2">
+                          ${Math.round(cuota.cuota).toLocaleString('es-AR')}
+                        </span>
+                        {expandedCuota === cuota.numero ? 
+                          <ChevronDown className="h-4 w-4" /> : 
+                          <ChevronRight className="h-4 w-4" />
+                        }
+                      </div>
+                    </div>
+                    
+                    {expandedCuota === cuota.numero && (
+                      <div className="px-4 pb-4 pt-0 border-t">
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div className="text-slate-500">Capital:</div>
+                          <div className="text-right">
+                            ${Math.round(cuota.capitalInicial - cuota.capitalRestante).toLocaleString('es-AR')}
+                          </div>
+                          
+                          <div className="text-slate-500">Interés:</div>
+                          <div className="text-right">
+                            ${Math.round(cuota.interes).toLocaleString('es-AR')}
+                          </div>
+                          
+                          {aplicarIVA && (
+                            <>
+                              <div className="text-slate-500">IVA:</div>
+                              <div className="text-right">
+                                ${Math.round(cuota.iva).toLocaleString('es-AR')}
+                              </div>
+                            </>
+                          )}
+                          
+                          <div className="text-slate-500">Saldo:</div>
+                          <div className="text-right">
+                            ${Math.round(cuota.capitalRestante).toLocaleString('es-AR')}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </Card>
+                ))}
+              </div>
             </div>
           )}
         </CardContent>
@@ -460,5 +518,5 @@ const LoanSimulator: React.FC = () => {
     </div>
   );
 };
-  
-  export default LoanSimulator;
+
+export default LoanSimulator;
