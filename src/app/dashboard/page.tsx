@@ -5,7 +5,10 @@ import { User } from '@supabase/supabase-js';
 
 export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null);
-  
+  const [ingresos, setIngresos] = useState<number>(0);
+  const [gastos, setGastos] = useState<number>(0);
+  const [beneficioNeto, setBeneficioNeto] = useState<number>(0);
+
   useEffect(() => {
     const fetchUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -13,6 +16,45 @@ export default function Dashboard() {
     };
     fetchUser();
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      fetchIngresos();
+      fetchGastos();
+    }
+  }, [user]);
+
+  const fetchIngresos = async () => {
+    const { data, error } = await supabase
+      .from('movimientos_caja')
+      .select('monto')
+      .eq('tipo', 'INGRESO');
+
+    if (error) {
+      console.error('Error fetching ingresos:', error);
+      return;
+    }
+
+    const totalIngresos = data.reduce((acc, curr) => acc + curr.monto, 0);
+    setIngresos(totalIngresos);
+    setBeneficioNeto(totalIngresos - gastos);
+  };
+
+  const fetchGastos = async () => {
+    const { data, error } = await supabase
+      .from('movimientos_caja')
+      .select('monto')
+      .eq('tipo', 'EGRESO');
+
+    if (error) {
+      console.error('Error fetching gastos:', error);
+      return;
+    }
+
+    const totalGastos = data.reduce((acc, curr) => acc + curr.monto, 0);
+    setGastos(totalGastos);
+    setBeneficioNeto(ingresos - totalGastos);
+  };
 
   if (!user) {
     return <div>Loading...</div>;
@@ -25,22 +67,17 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <div className="bg-white p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-semibold text-gray-700">Ingresos Mensuales</h2>
-            <p className="text-2xl font-bold text-blue-600">$25,000</p>
+            <p className="text-2xl font-bold text-blue-600">${ingresos.toLocaleString()}</p>
           </div>
           <div className="bg-white p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-semibold text-gray-700">Gastos Mensuales</h2>
-            <p className="text-2xl font-bold text-red-600">$15,000</p>
+            <p className="text-2xl font-bold text-red-600">${gastos.toLocaleString()}</p>
           </div>
           <div className="bg-white p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-semibold text-gray-700">Beneficio Neto</h2>
-            <p className="text-2xl font-bold text-green-600">$10,000</p>
+            <p className="text-2xl font-bold text-green-600">${beneficioNeto.toLocaleString()}</p>
           </div>
         </div>
-        <button
-        className="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-        >
-          Generar Reporte
-        </button>
       </main>
     </div>
   );
