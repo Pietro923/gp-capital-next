@@ -207,15 +207,15 @@ const Providers: React.FC = () => {
               <Plus className="mr-2 h-4 w-4" /> Nuevo Proveedor
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-md max-w-[95vw] p-4 sm:p-6">
-            <DialogHeader>
+          <DialogContent className="sm:max-w-lg max-w-[95vw] p-3 sm:p-6 overflow-y-auto max-h-[90vh]">
+            <DialogHeader className="mb-2">
               <DialogTitle>Nuevo Proveedor</DialogTitle>
               <DialogDescription>
                 Complete los datos del nuevo proveedor
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="nombre">Nombre *</Label>
                   <Input
@@ -223,7 +223,7 @@ const Providers: React.FC = () => {
                     name="nombre"
                     value={formData.nombre}
                     onChange={handleInputChange}
-                    placeholder="Ingrese el nombre del proveedor"
+                    placeholder="Nombre del proveedor"
                     className="w-full"
                     required
                   />
@@ -246,10 +246,10 @@ const Providers: React.FC = () => {
                     onValueChange={handleSelectChange} 
                     value={formData.tipo_iva_id || ""}
                   >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Seleccione tipo de IVA" />
+                    <SelectTrigger id="tipo_iva_id" className="w-full">
+                      <SelectValue placeholder="Seleccione tipo" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent position="popper" className="w-full">
                       {tiposIva.map(tipo => (
                         <SelectItem key={tipo.id} value={tipo.id}>
                           {tipo.nombre}
@@ -265,7 +265,7 @@ const Providers: React.FC = () => {
                     name="contacto"
                     value={formData.contacto}
                     onChange={handleInputChange}
-                    placeholder="Ingrese el nombre de contacto"
+                    placeholder="Nombre de contacto"
                     className="w-full"
                   />
                 </div>
@@ -289,7 +289,7 @@ const Providers: React.FC = () => {
                     type="tel"
                     value={formData.telefono}
                     onChange={handleInputChange}
-                    placeholder="Ingrese el número de teléfono"
+                    placeholder="Número de teléfono"
                     className="w-full"
                   />
                 </div>
@@ -300,7 +300,7 @@ const Providers: React.FC = () => {
                     name="direccion"
                     value={formData.direccion}
                     onChange={handleInputChange}
-                    placeholder="Ingrese la dirección del proveedor"
+                    placeholder="Dirección del proveedor"
                     className="w-full"
                   />
                 </div>
@@ -311,7 +311,7 @@ const Providers: React.FC = () => {
                     name="observaciones"
                     value={formData.observaciones}
                     onChange={handleInputChange}
-                    placeholder="Ingrese cualquier observación adicional"
+                    placeholder="Observaciones adicionales"
                     className="w-full"
                     rows={3}
                   />
@@ -322,7 +322,7 @@ const Providers: React.FC = () => {
                   <AlertDescription>{formError}</AlertDescription>
                 </Alert>
               )}
-              <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-0">
+              <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-0 pt-2 mt-2">
                 <Button 
                   type="button" 
                   variant="outline" 
