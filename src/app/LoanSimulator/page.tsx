@@ -40,9 +40,8 @@ interface CuotaSimulada {
   capitalRestante: number;
 }
 
-// Interfaces ajustadas según el esquema de la base de datos
 interface Proveedor {
-  id: string; // Cambiado a string para UUID
+  id: string;
   nombre: string;
   cuit: string;
   direccion: string | null;
@@ -63,6 +62,7 @@ const LoanSimulator: React.FC = () => {
   const [tasaInteres, setTasaInteres] = useState<number>(65);
   const [empresa, setEmpresa] = useState<string>('Proveedor');
   const [frecuencia, setFrecuencia] = useState<string>('mensual');
+  const [moneda, setMoneda] = useState<string>('Pesos');
   const [porcentajeIVA, setPorcentajeIVA] = useState<number>(21);
   const [aplicarIVA, setAplicarIVA] = useState<boolean>(true);
   const [cuotas, setCuotas] = useState<CuotaSimulada[]>([]);
@@ -80,16 +80,14 @@ const LoanSimulator: React.FC = () => {
       setIsLoading(true);
       setError(null);
       try {
-        // Cargar proveedores
         const { data: proveedoresData, error: proveedoresError } = await supabase
           .from('proveedores')
           .select('*');
         
         if (proveedoresError) throw proveedoresError;
         setProveedores(proveedoresData || []);
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
       } catch (error) {
-        setError('Error al cargar los datos');
+        setError(`Error al cargar los datos: ${error instanceof Error ? error.message : String(error)}`);
       } finally {
         setIsLoading(false);
       }
@@ -98,27 +96,6 @@ const LoanSimulator: React.FC = () => {
     fetchProveedores();
   }, []);
 
-  // Función para obtener los plazos basados en la frecuencia
-  const getPlazosDisponibles = () => {
-    if (frecuencia === 'semestral') {
-      return [2, 4, 6, 8, 10];  // 1, 2, 3, 4, 5 años en cuotas semestrales
-    } else {
-      return [12, 24, 36, 48, 60];  // 1, 2, 3, 4, 5 años en cuotas mensuales
-    }
-  };
-
-  // Función para ajustar el plazo al cambiar de frecuencia
-  const ajustarPlazo = (nuevaFrecuencia: string) => {
-    if (nuevaFrecuencia === 'semestral') {
-      // Si cambia a semestral, ajustar al número más cercano de semestres
-      const semestresCercanos = Math.round(plazo / 6);
-      setPlazo(Math.max(2, Math.min(10, semestresCercanos * 2)));
-    } else {
-      // Si cambia a mensual, ajustar al número más cercano de meses
-      const mesesCercanos = Math.round(plazo * 6);
-      setPlazo(Math.max(12, Math.min(60, mesesCercanos)));
-    }
-  };
 
   const calcularCuotas = () => {
     // Determinar periodos por año según la frecuencia
@@ -134,16 +111,26 @@ const LoanSimulator: React.FC = () => {
     
     const nuevasCuotas: CuotaSimulada[] = [];
     let capitalPendiente = monto;
-    let fecha = new Date();
+    
+    const fecha = new Date();
+// Establecer el primer día del mes actual para evitar problemas con meses de diferente longitud
+fecha.setDate(1);
+// Establecer el día 10 del mes actual como primera fecha de vencimiento
+fecha.setDate(10);
+    
     let montoTotalCalculado = 0;
     
     for (let i = 1; i <= plazo; i++) {
-      // Ajustar fecha según frecuencia
+      // Primero avanzar el mes
       if (frecuencia === 'semestral') {
-        fecha = new Date(fecha.setMonth(fecha.getMonth() + 6));
+        fecha.setMonth(fecha.getMonth() + 6);
       } else {
-        fecha = new Date(fecha.setMonth(fecha.getMonth() + 1));
+        fecha.setMonth(fecha.getMonth() + 1);
       }
+      // Luego establecer el día 10
+      fecha.setDate(11);
+      // ...
+
       
       const interesCuota = capitalPendiente * tasaPorPeriodo;
       
@@ -222,13 +209,25 @@ const LoanSimulator: React.FC = () => {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <div className="space-y-2">
+              <label className="text-sm font-medium">Moneda</label>
+              <Select value={moneda} onValueChange={setMoneda}>
+                <SelectTrigger>
+                  <SelectValue>{moneda}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Dolar">Dólar</SelectItem>
+                  <SelectItem value="Pesos">Pesos</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
               <label className="text-sm font-medium">Empresa</label>
               <Select value={empresa} onValueChange={setEmpresa}>
                 <SelectTrigger>
                   <SelectValue>{empresa}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {/* Opción "placeholder" con un valor especial */}
                   <SelectItem value="placeholder" disabled>
                     Seleccionar empresa
                   </SelectItem>
@@ -251,13 +250,13 @@ const LoanSimulator: React.FC = () => {
                 placeholder="Ingrese el monto"
               />
             </div>
+            
             <div className="space-y-2">
               <label className="text-sm font-medium">Frecuencia de Pago</label>
               <Select 
                 value={frecuencia} 
                 onValueChange={(v) => {
                   setFrecuencia(v);
-                  ajustarPlazo(v);
                 }}
               >
                 <SelectTrigger>
@@ -269,23 +268,16 @@ const LoanSimulator: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-2">
-              <label className="text-sm font-medium">Plazo</label>
-              <Select 
-                value={plazo.toString()} 
-                onValueChange={(v) => setPlazo(Number(v))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar plazo" />
-                </SelectTrigger>
-                <SelectContent>
-                  {getPlazosDisponibles().map((p) => (
-                    <SelectItem key={p} value={p.toString()}>
-                      {p} {frecuencia === 'semestral' ? 'semestres' : 'meses'}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <label className="text-sm font-medium">Plazo ({frecuencia === 'semestral' ? 'Semestres' : 'Meses'})</label>
+              <Input
+                type="number"
+                min="1"
+                value={plazo}
+                onChange={(e) => setPlazo(Number(e.target.value))}
+                placeholder="Ingrese el plazo"
+              />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Tasa de Interés Anual (%)</label>
