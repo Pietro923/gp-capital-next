@@ -7,6 +7,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { cn } from "@/lib/utils";
+import { Loader2 } from "lucide-react";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -47,7 +48,12 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   }, [user, loading, pathname, router]);
 
   if (loading) {
-    return <p className="text-center mt-10">Cargando sesión...</p>;
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="ml-2 text-lg">Cargando sesión...</p>
+      </div>
+    );
   }
 
   if (!user && pathname !== "/") {
@@ -81,6 +87,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <AuthProvider>
       <html lang="en">
+      <title>GP CAPITAL</title>
+      <link rel="icon" href="/favicon.ico" />
         <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
           <ProtectedLayout>
             {children}
