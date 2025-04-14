@@ -316,7 +316,6 @@ setPurchases(prev => [{
                   <TableHead className="hidden md:table-cell">Producto</TableHead>
                   <TableHead>Monto</TableHead>
                   <TableHead className="hidden sm:table-cell">Estado</TableHead>
-                  <TableHead>Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -327,9 +326,6 @@ setPurchases(prev => [{
                     <TableCell className="hidden md:table-cell">{purchase.product}</TableCell>
                     <TableCell>${purchase.amount.toLocaleString()}</TableCell>
                     <TableCell className="hidden sm:table-cell">{purchase.status}</TableCell>
-                    <TableCell>
-                      <Button variant="outline" size="sm" className="w-full sm:w-auto">Ver detalle</Button>
-                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

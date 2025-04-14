@@ -27,9 +27,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-// Interfaces ajustadas según el esquema de la base de datos
 interface Proveedor {
-  id: string; // Cambiado a string para UUID
+  id: string;
   nombre: string;
   cuit: string;
   tipo_iva_id: string | null;
@@ -47,6 +46,7 @@ interface TipoIva {
 }
 
 interface ProveedorFormData {
+  id?: string;
   nombre: string;
   cuit: string;
   tipo_iva_id: string | null;
@@ -78,60 +78,131 @@ const Providers: React.FC = () => {
   const [formError, setFormError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isEditing, setIsEditing] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setFormError(null);
-  
-    // Validar campos obligatorios según la base de datos
+
     if (!formData.nombre || !formData.cuit) {
       setFormError('Por favor, complete los campos obligatorios: Nombre y CUIT.');
       setIsSubmitting(false);
       return;
     }
-  
+
     try {
-      const { data, error } = await supabase
-        .from('proveedores')
-        .insert([{
-          nombre: formData.nombre,
-          cuit: formData.cuit,
-          tipo_iva_id: formData.tipo_iva_id,
-          direccion: formData.direccion || null,
-          telefono: formData.telefono || null,
-          correo: formData.correo || null,
-          contacto: formData.contacto || null,
-          observaciones: formData.observaciones || null
-        }])
-        .select();
-  
-      if (error) throw error;
-  
-      if (data) {
-        setProveedores(prev => [...prev, data[0]]);
+      if (isEditing && formData.id) {
+        // Actualizar proveedor existente
+        const { data, error } = await supabase
+          .from('proveedores')
+          .update({
+            nombre: formData.nombre,
+            cuit: formData.cuit,
+            tipo_iva_id: formData.tipo_iva_id,
+            direccion: formData.direccion || null,
+            telefono: formData.telefono || null,
+            correo: formData.correo || null,
+            contacto: formData.contacto || null,
+            observaciones: formData.observaciones || null
+          })
+          .eq('id', formData.id)
+          .select();
+
+        if (error) throw error;
+
+        if (data) {
+          setProveedores(prev => prev.map(p => p.id === formData.id ? data[0] : p));
+        }
+      } else {
+        // Crear nuevo proveedor
+        const { data, error } = await supabase
+          .from('proveedores')
+          .insert([{
+            nombre: formData.nombre,
+            cuit: formData.cuit,
+            tipo_iva_id: formData.tipo_iva_id,
+            direccion: formData.direccion || null,
+            telefono: formData.telefono || null,
+            correo: formData.correo || null,
+            contacto: formData.contacto || null,
+            observaciones: formData.observaciones || null
+          }])
+          .select();
+
+        if (error) throw error;
+
+        if (data) {
+          setProveedores(prev => [...prev, data[0]]);
+        }
       }
+      
       setFormData(initialFormState);
       setIsDialogOpen(false);
+      setIsEditing(false);
     } catch (error: unknown) {
-      console.error('Error al agregar proveedor:', error);
+      console.error('Error al guardar proveedor:', error);
     
       if (error instanceof Error) {
         setFormError(error.message);
       } else {
-        setFormError('Error al agregar el proveedor. Por favor, intente nuevamente.');
+        setFormError('Error al guardar el proveedor. Por favor, intente nuevamente.');
       }
     } finally {
       setIsSubmitting(false);
     }
   };
-  
+
+  const handleEdit = (proveedor: Proveedor) => {
+    setFormData({
+      id: proveedor.id,
+      nombre: proveedor.nombre,
+      cuit: proveedor.cuit,
+      tipo_iva_id: proveedor.tipo_iva_id,
+      direccion: proveedor.direccion || '',
+      telefono: proveedor.telefono || '',
+      correo: proveedor.correo || '',
+      contacto: proveedor.contacto || '',
+      observaciones: proveedor.observaciones || ''
+    });
+    setIsEditing(true);
+    setIsDialogOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    
+    setIsDeleting(true);
+    try {
+      const { error } = await supabase
+        .from('proveedores')
+        .delete()
+        .eq('id', deleteId);
+
+      if (error) throw error;
+
+      setProveedores(prev => prev.filter(p => p.id !== deleteId));
+      setDeleteId(null);
+    } catch (error: unknown) {
+      console.error('Error al eliminar proveedor:', error);
+    
+      if (error instanceof Error) {
+        setError(error.message);
+      } else {
+        setError('Error al eliminar el proveedor. Por favor, intente nuevamente.');
+      }
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   useEffect(() => {
     const fetchProveedores = async () => {
       setIsLoading(true);
       setError(null);
       try {
-        // Cargar proveedores
         const { data: proveedoresData, error: proveedoresError } = await supabase
           .from('proveedores')
           .select('*');
@@ -139,7 +210,6 @@ const Providers: React.FC = () => {
         if (proveedoresError) throw proveedoresError;
         setProveedores(proveedoresData || []);
         
-        // Cargar tipos de IVA
         const { data: tiposIvaData, error: tiposIvaError } = await supabase
           .from('tipos_iva')
           .select('*');
@@ -178,18 +248,22 @@ const Providers: React.FC = () => {
     }));
   };
 
-  // Filtrar proveedores basado en la búsqueda
   const filteredProveedores = proveedores.filter(proveedor => 
     proveedor.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
     proveedor.cuit.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (proveedor.contacto && proveedor.contacto.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  // Función para obtener el nombre del tipo de IVA
   const getTipoIvaNombre = (tipoIvaId: string | null) => {
     if (!tipoIvaId) return "No especificado";
     const tipoIva = tiposIva.find(tipo => tipo.id === tipoIvaId);
     return tipoIva ? tipoIva.nombre : "No especificado";
+  };
+
+  const resetForm = () => {
+    setFormData(initialFormState);
+    setIsEditing(false);
+    setIsDialogOpen(false);
   };
 
   return (
@@ -201,7 +275,10 @@ const Providers: React.FC = () => {
             Administra los proveedores del sistema
           </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <Dialog open={isDialogOpen} onOpenChange={(open) => {
+          if (!open) resetForm();
+          setIsDialogOpen(open);
+        }}>
           <DialogTrigger asChild>
             <Button variant="outline" className="bg-blue-500 text-white hover:bg-blue-600 w-full sm:w-auto">
               <Plus className="mr-2 h-4 w-4" /> Nuevo Proveedor
@@ -209,9 +286,9 @@ const Providers: React.FC = () => {
           </DialogTrigger>
           <DialogContent className="sm:max-w-lg max-w-[95vw] p-3 sm:p-6 overflow-y-auto max-h-[90vh]">
             <DialogHeader className="mb-2">
-              <DialogTitle>Nuevo Proveedor</DialogTitle>
+              <DialogTitle>{isEditing ? 'Editar Proveedor' : 'Nuevo Proveedor'}</DialogTitle>
               <DialogDescription>
-                Complete los datos del nuevo proveedor
+                {isEditing ? 'Modifique los datos del proveedor' : 'Complete los datos del nuevo proveedor'}
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -326,7 +403,7 @@ const Providers: React.FC = () => {
                 <Button 
                   type="button" 
                   variant="outline" 
-                  onClick={() => setIsDialogOpen(false)}
+                  onClick={resetForm}
                   className="w-full sm:w-auto sm:mr-2"
                 >
                   Cancelar
@@ -339,7 +416,7 @@ const Providers: React.FC = () => {
                   {isSubmitting && (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   )}
-                  Guardar Proveedor
+                  {isEditing ? 'Actualizar Proveedor' : 'Guardar Proveedor'}
                 </Button>
               </DialogFooter>
             </form>
@@ -408,12 +485,52 @@ const Providers: React.FC = () => {
                         <TableCell className="hidden xl:table-cell">{proveedor.direccion || "-"}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="icon" className="hover:bg-gray-200">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="hover:bg-gray-200"
+                              onClick={() => handleEdit(proveedor)}
+                            >
                               <Pencil className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="hover:bg-gray-200">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="hover:bg-gray-200 hover:text-red-500"
+                                  onClick={() => setDeleteId(proveedor.id)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent className="sm:max-w-[425px]">
+                                <DialogHeader>
+                                  <DialogTitle>Confirmar eliminación</DialogTitle>
+                                  <DialogDescription>
+                                    ¿Está seguro que desea eliminar al proveedor {proveedor.nombre}?
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <DialogFooter>
+                                  <Button 
+                                    variant="outline" 
+                                    onClick={() => setDeleteId(null)}
+                                  >
+                                    Cancelar
+                                  </Button>
+                                  <Button 
+                                    variant="destructive" 
+                                    onClick={handleDelete}
+                                    disabled={isDeleting}
+                                  >
+                                    {isDeleting && (
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    )}
+                                    Eliminar
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
                           </div>
                         </TableCell>
                       </TableRow>
