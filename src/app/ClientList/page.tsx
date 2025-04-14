@@ -196,48 +196,92 @@ const ClientList: React.FC = () => {
     e.preventDefault();
     setIsSubmitting(true);
     setFormError(null);
-    
+  
+    // Validaciones dinámicas
+    const errores: string[] = [];
+  
+    if (!formData.dni) {
+      errores.push("El DNI es obligatorio.");
+    }
+  
+    if (!formData.tipo_iva_id) {
+      errores.push("La condición frente al IVA es obligatoria.");
+    }
+  
+    if (activeTab === "EMPRESA") {
+      if (!formData.empresa) errores.push("El nombre de la empresa es obligatorio.");
+    }
+  
+    if (activeTab === "PERSONA_FISICA") {
+      if (!formData.nombre) errores.push("El nombre es obligatorio.");
+    }
+  
+    if (errores.length > 0) {
+      setFormError(errores.join(" "));
+      setIsSubmitting(false);
+      return;
+    }
+  
     try {
+      // Verificación de DNI duplicado al crear nuevo cliente
+      if (!isEditing) {
+        const { data: dniExistente, error: dniError } = await supabase
+          .from("clientes")
+          .select("id")
+          .eq("dni", formData.dni)
+          .single();
+  
+        if (dniExistente) {
+          setFormError("El DNI ya está en uso.");
+          setIsSubmitting(false);
+          return;
+        }
+  
+        if (dniError && dniError.code !== "PGRST116") {
+          // PGRST116 es "No rows found" en modo single
+          throw dniError;
+        }
+      }
+  
       if (isEditing && selectedClientId) {
-        // Actualizar cliente existente
         const { error } = await supabase
-          .from('clientes')
+          .from("clientes")
           .update({
             ...formData,
           })
-          .eq('id', selectedClientId);
-          
+          .eq("id", selectedClientId);
+  
         if (error) throw error;
       } else {
-        // Insertar nuevo cliente
         const { error } = await supabase
-          .from('clientes')
+          .from("clientes")
           .insert([
             {
               ...formData,
-              created_at: new Date().toISOString()
-            }
+              created_at: new Date().toISOString(),
+            },
           ]);
-          
+  
         if (error) throw error;
       }
-      
-      // Refetch clients to get the complete data with joins
+  
       await fetchClientes();
       resetForm();
       setIsDialogOpen(false);
     } catch (error: unknown) {
-      console.error('Error al guardar cliente:', error);
-    
+      console.error("Error al guardar cliente:", error);
+  
       if (error instanceof Error) {
         setFormError(error.message);
       } else {
-        setFormError('Error al guardar el cliente. Por favor, intente nuevamente.');
+        setFormError("Error al guardar el cliente. Por favor, intente nuevamente.");
       }
     } finally {
       setIsSubmitting(false);
     }
   };
+  
+  
 
   const fetchTiposIVA = async () => {
     try {
@@ -396,7 +440,7 @@ const ClientList: React.FC = () => {
                           <Input
                             id="dni"
                             name="dni"
-                            
+                            required
                             value={formData.dni}
                             onChange={handleInputChange}
                           />
@@ -420,12 +464,12 @@ const ClientList: React.FC = () => {
                         <div className="space-y-2">
                           <Label htmlFor="empresa">Nombre de Empresa</Label>
                           <Input
-                            id="empresa"
-                            name="empresa"
-                            
-                            value={formData.empresa}
-                            onChange={handleInputChange}
-                          />
+  id="empresa"
+  name="empresa"
+  value={formData.empresa}
+  onChange={handleInputChange}
+  required={activeTab === "EMPRESA"} // solo requerido si es empresa
+/>
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="nombre">Nombre Contacto</Label>
@@ -453,6 +497,7 @@ const ClientList: React.FC = () => {
                             id="dni"
                             name="dni"
                             value={formData.dni}
+                            required={activeTab === "EMPRESA"} // solo requerido si es empresa
                             onChange={handleInputChange}
                           />
                         </div>
@@ -526,6 +571,7 @@ const ClientList: React.FC = () => {
                         <AlertDescription>{formError}</AlertDescription>
                       </Alert>
                     )}
+                    
                     <DialogFooter className="flex flex-col gap-2">
                       <Button type="submit" disabled={isSubmitting} className="w-full">
                         {isSubmitting && (

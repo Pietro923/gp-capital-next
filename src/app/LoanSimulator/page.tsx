@@ -56,12 +56,16 @@ interface ExcelRow {
   [key: string]: string | number;
 }
 
+type TipoCliente = "PERSONA_FISICA" | "EMPRESA";
+
 interface Cliente {
   id: string;
+  tipo_cliente: TipoCliente; // 👈 nuevo campo
   nombre: string;
-  apellido: string;
+  apellido?: string; // opcional si es empresa
+  empresa?: string;  // opcional si es persona
   direccion: string;
-  dni: string;
+  dni?: string;
 }
 
 const LoanSimulator: React.FC = () => {
@@ -258,12 +262,14 @@ fecha.setDate(10);
                 <SelectValue placeholder="Seleccionar cliente" />
               </SelectTrigger>
               <SelectContent>
-                {clientes.map((cliente) => (
-                  <SelectItem key={cliente.id} value={cliente.id}>
-                    {cliente.apellido}, {cliente.nombre}
-                  </SelectItem>
-                ))}
-              </SelectContent>
+  {clientes.map((cliente) => (
+    <SelectItem key={cliente.id} value={cliente.id}>
+    {cliente.tipo_cliente === "EMPRESA"
+      ? cliente.empresa
+      : `${cliente.apellido ? cliente.apellido + ', ' : ''}${cliente.nombre}`}
+  </SelectItem>
+  ))}
+</SelectContent>
             </Select>
             </div>
 
