@@ -56,11 +56,19 @@ interface ExcelRow {
   [key: string]: string | number;
 }
 
+interface Cliente {
+  id: string;
+  nombre: string;
+  apellido: string;
+  direccion: string;
+  dni: string;
+}
+
 const LoanSimulator: React.FC = () => {
   const [monto, setMonto] = useState<number>(0);
   const [plazo, setPlazo] = useState<number>(12);
   const [tasaInteres, setTasaInteres] = useState<number>(65);
-  const [empresa, setEmpresa] = useState<string>('Proveedor');
+  const [empresa] = useState<string>('Proveedor');
   const [frecuencia, setFrecuencia] = useState<string>('mensual');
   const [moneda, setMoneda] = useState<string>('Pesos');
   const [porcentajeIVA, setPorcentajeIVA] = useState<number>(21);
@@ -70,8 +78,10 @@ const LoanSimulator: React.FC = () => {
   const [montoTotal, setMontoTotal] = useState<number>(0);
   const [open, setOpen] = useState(false);
   const [expandedCuota, setExpandedCuota] = useState<number | null>(null);
-  
-  const [proveedores, setProveedores] = useState<Proveedor[]>([]);
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+    const [clienteId, setClienteId] = useState<string>("");
+
+  const [, setProveedores] = useState<Proveedor[]>([]);
   const [, setIsLoading] = useState(true);
   const [, setError] = useState<string | null>(null);
   
@@ -95,6 +105,26 @@ const LoanSimulator: React.FC = () => {
     
     fetchProveedores();
   }, []);
+  
+  useEffect(() => {
+    const fetchClientes = async () => {
+      try {
+        const { data: clientesData, error: clientesError } = await supabase
+          .from('clientes')
+          .select('*')
+          .order('apellido');
+  
+        if (clientesError) throw clientesError;
+        if (clientesData) setClientes(clientesData);
+      } catch (error) {
+        console.error('Error cargando clientes:', error);
+        setError('Error al cargar los clientes');
+      }
+    };
+  
+    fetchClientes();
+  }, []);
+  
 
 
   const calcularCuotas = () => {
@@ -222,6 +252,22 @@ fecha.setDate(10);
             </div>
 
             <div className="space-y-2">
+            <Label>Cliente</Label>
+            <Select value={clienteId} onValueChange={setClienteId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar cliente" />
+              </SelectTrigger>
+              <SelectContent>
+                {clientes.map((cliente) => (
+                  <SelectItem key={cliente.id} value={cliente.id}>
+                    {cliente.apellido}, {cliente.nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            </div>
+
+            {/* <div className="space-y-2">
               <label className="text-sm font-medium">Empresa</label>
               <Select value={empresa} onValueChange={setEmpresa}>
                 <SelectTrigger>
@@ -239,6 +285,7 @@ fecha.setDate(10);
                 </SelectContent>
               </Select>
             </div>
+            */}
             
             <div className="space-y-2">
               <label className="text-sm font-medium">Monto del Préstamo</label>

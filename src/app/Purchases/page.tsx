@@ -113,6 +113,7 @@ export default function Purchases() {
           .from('compras')
           .select(`
             *,
+            proveedores (nombre),
             detalles_compra (
               descripcion,
               cantidad,
@@ -120,18 +121,15 @@ export default function Purchases() {
             )
           `)
           .order('fecha_compra', { ascending: false });
-
         if (error) throw error;
-
         const formattedPurchases = data.map(purchase => ({
           id: purchase.id,
           date: purchase.fecha_compra,
-          provider: purchase.proveedor,
+          provider: purchase.proveedores?.nombre || 'Desconocido',
           product: purchase.detalles_compra[0]?.descripcion || 'Sin detalle',
           amount: purchase.total_factura,
           status: 'Completado'
         }));
-
         setPurchases(formattedPurchases);
       } catch (error) {
         console.error('Error fetching purchases:', error);
@@ -164,22 +162,21 @@ export default function Purchases() {
       const provider = providers.find(p => p.id.toString() === formData.providerId);
       
       // Insertar la compra principal
-      const { data: compraData, error: compraError } = await supabase
-        .from('compras')
-        .insert([
-          {
-            proveedor: provider?.nombre,
-            total_factura: parseFloat(formData.amount),
-            fecha_compra: formData.date,
-            tipo_factura: 'A',
-            total_neto: parseFloat(formData.amount) / 1.21,
-            iva: (parseFloat(formData.amount) / 1.21) * 0.21,
-            forma_pago_id: formaPagoId,
-            numero_factura: `F-${Date.now()}`,
-            cuit: provider?.contacto || '00000000000'
-          }
-        ])
-        .select();
+const { data: compraData, error: compraError } = await supabase
+.from('compras')
+.insert([
+  {
+    proveedor_id: formData.providerId, // Use the provider ID instead of name
+    total_factura: parseFloat(formData.amount),
+    fecha_compra: formData.date,
+    tipo_factura: 'A',
+    total_neto: parseFloat(formData.amount) / 1.21,
+    iva: (parseFloat(formData.amount) / 1.21) * 0.21,
+    forma_pago_id: formaPagoId,
+    numero_factura: `F-${Date.now()}`
+  }
+])
+.select();
 
       if (compraError) throw compraError;
 
@@ -199,14 +196,14 @@ export default function Purchases() {
       if (detalleError) throw detalleError;
 
       // Actualizar la lista de compras
-      setPurchases(prev => [{
-        id: compraData[0].id,
-        date: compraData[0].fecha_compra,
-        provider: compraData[0].proveedor,
-        product: formData.product,
-        amount: compraData[0].total_factura,
-        status: 'Completado'
-      }, ...prev]);
+setPurchases(prev => [{
+  id: compraData[0].id,
+  date: compraData[0].fecha_compra,
+  provider: provider?.nombre || 'Desconocido', // Usar el nombre del proveedor del objeto provider
+  product: formData.product,
+  amount: compraData[0].total_factura,
+  status: 'Completado'
+}, ...prev]);
 
       // Limpiar el formulario
       setFormData({
