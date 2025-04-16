@@ -43,19 +43,26 @@ interface InvoiceItem {
   unitPrice: number;
   total: number;
 }
+type TipoCliente = "PERSONA_FISICA" | "EMPRESA";
 
 interface Cliente {
   id: string;
+  tipo_cliente: TipoCliente; // 👈 nuevo campo
   nombre: string;
-  apellido: string;
+  apellido?: string; // opcional si es empresa
+  empresa?: string;  // opcional si es persona
   direccion: string;
-  dni: string;
+  dni?: string;
+
   cuit: string;
   tipo_iva_id: string;
   tipo_iva?: { nombre: string };
 }
 
+
+
 interface TipoIva {
+  porcentaje_iva: number;
   id: string;
   nombre: string;
 }
@@ -71,6 +78,7 @@ interface FacturaFormData {
   tipoIvaId: string;
   formaPagoId: string;
   puntoVenta: string;
+  numeroFactura: string; // Nueva propiedad
 }
 
 // Add interface for factura data
@@ -118,6 +126,7 @@ const Billing: React.FC = () => {
     tipoIvaId: '',
     formaPagoId: '',
     puntoVenta: '0001',
+    numeroFactura: '', // Inicializar la nueva propiedad
   });
 
   // Estados para los datos externos
@@ -238,17 +247,38 @@ const Billing: React.FC = () => {
   
   // Calcular IVA según condición del cliente
   const calcularIVA = (total: number, tipoIvaId: string) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    // Buscar el tipo de IVA en el array de tiposIva
     const tipoIva = tiposIva.find(t => t.id === tipoIvaId);
-    // Por defecto 21% si no se encuentra
-    const porcentajeIVA = 0.21;
     
+    if (!tipoIva) {
+      console.error('Tipo de IVA no encontrado para ID:', tipoIvaId);
+      return {
+        totalNeto: total,
+        iva: 0,
+        porcentajeIVA: 0
+      };
+    }
+  
+    // Convertir el porcentaje_iva de la base de datos a decimal
+    const porcentajeIVA = tipoIva.porcentaje_iva / 100;
+    
+    // Si el porcentaje es 0 (exento)
+    if (porcentajeIVA === 0) {
+      return {
+        totalNeto: total,
+        iva: 0,
+        porcentajeIVA: tipoIva.porcentaje_iva
+      };
+    }
+    
+    // Cálculo normal
     const totalNeto = total / (1 + porcentajeIVA);
     const iva = total - totalNeto;
     
     return {
       totalNeto,
-      iva
+      iva,
+      porcentajeIVA: tipoIva.porcentaje_iva
     };
   };
 
@@ -430,23 +460,24 @@ const Billing: React.FC = () => {
       const { totalNeto, iva } = calcularIVA(total, formData.tipoIvaId);
       
       // Insertar la factura principal
-      const { data: nuevaFactura, error: facturaError } = await supabase
-        .from('facturacion')
-        .insert([
-          {
-            tipo_factura: formData.tipoFactura,
-            cliente_id: formData.clienteId,
-            tipo_iva_id: formData.tipoIvaId,
-            forma_pago_id: formData.formaPagoId,
-            total_neto: totalNeto,
-            iva: iva,
-            total_factura: total,
-            punto_venta: formData.puntoVenta,
-            afip_cargada: false
-          }
-        ])
-        .select()
-        .single();
+const { data: nuevaFactura, error: facturaError } = await supabase
+.from('facturacion')
+.insert([
+  {
+    tipo_factura: formData.tipoFactura,
+    cliente_id: formData.clienteId,
+    tipo_iva_id: formData.tipoIvaId,
+    forma_pago_id: formData.formaPagoId,
+    total_neto: totalNeto,
+    iva: iva,
+    total_factura: total,
+    punto_venta: formData.puntoVenta,
+    numero_factura: formData.numeroFactura ? parseInt(formData.numeroFactura) : null, // Añadir número de factura
+    afip_cargada: false
+  }
+])
+.select()
+.single();
       
       if (facturaError) throw facturaError;
       if (!nuevaFactura) throw new Error('No se pudo crear la factura');
@@ -485,6 +516,7 @@ const Billing: React.FC = () => {
         tipoIvaId: '',
         formaPagoId: '',
         puntoVenta: formData.puntoVenta, // Mantener el punto de venta
+        numeroFactura: '', // Inicializar la nueva propiedad
       });
       
       alert('Factura generada exitosamente');
@@ -548,25 +580,36 @@ const Billing: React.FC = () => {
                       placeholder="0001"
                     />
                   </div>
+                  <div className="space-y-2">
+  <Label htmlFor="numeroFactura">Número de Factura</Label>
+  <Input
+    id="numeroFactura"
+    value={formData.numeroFactura}
+    onChange={(e) => handleFacturaDataChange('numeroFactura', e.target.value)}
+    placeholder="00000001"
+  />
+</div>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="cliente">Cliente</Label>
-                    <Select 
-                      value={formData.clienteId} 
-                      onValueChange={handleClienteChange}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccione cliente" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {clientes.map(cliente => (
-                          <SelectItem key={cliente.id} value={cliente.id}>
-                            {cliente.nombre} {cliente.apellido}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                              <Label>Cliente</Label>
+                              <Select 
+  value={formData.clienteId} 
+  onValueChange={(value) => handleClienteChange(value)}
+>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Seleccionar cliente" />
+                                </SelectTrigger>
+                                <SelectContent>
+    {clientes.map((cliente) => (
+      <SelectItem key={cliente.id} value={cliente.id}>
+        {cliente.tipo_cliente === "EMPRESA"
+          ? cliente.empresa
+          : `${cliente.apellido ? cliente.apellido + ', ' : ''}${cliente.nombre}`}
+      </SelectItem>
+    ))}
+  </SelectContent>
+                              </Select>
+                              </div>
                   
                   <div className="space-y-2">
                     <Label htmlFor="formaPago">Forma de Pago</Label>
@@ -677,6 +720,31 @@ const Billing: React.FC = () => {
                     No hay items agregados
                   </div>
                 )}
+                {items.length > 0 && (
+  <div className="mt-4 p-4 border rounded-md">
+  <h3 className="font-medium mb-2">Resumen de Impuestos</h3>
+  <div className="grid grid-cols-3 gap-4">
+    <div>
+      <Label>Neto</Label>
+      <div className="mt-1 font-medium">
+        ${calcularIVA(total, formData.tipoIvaId).totalNeto.toFixed(2)}
+      </div>
+    </div>
+    <div>
+      <Label>IVA ({calcularIVA(total, formData.tipoIvaId).porcentajeIVA}%)</Label>
+      <div className="mt-1 font-medium">
+        ${calcularIVA(total, formData.tipoIvaId).iva.toFixed(2)}
+      </div>
+    </div>
+    <div>
+      <Label>Total</Label>
+      <div className="mt-1 font-medium">
+        ${total.toFixed(2)}
+      </div>
+    </div>
+  </div>
+</div>
+)}
               </CardContent>
             </Card>
             

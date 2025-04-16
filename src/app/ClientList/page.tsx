@@ -720,80 +720,80 @@ const ClientList: React.FC = () => {
             </div>
             
             {/* Desktop view: Table layout */}
-            <div className="hidden md:block rounded-md border overflow-auto">
-            <div className="max-h-[calc(100vh-300px)] overflow-y-auto"> {/* Añade esta línea */}
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="whitespace-nowrap">Tipo</TableHead>
-                    <TableHead className="whitespace-nowrap">Nombre</TableHead>
-                    <TableHead className="whitespace-nowrap">Apellido</TableHead>
-                    <TableHead className="whitespace-nowrap">Empresa</TableHead>
-                    <TableHead className="whitespace-nowrap">DNI</TableHead>
-                    <TableHead className="whitespace-nowrap">CUIT</TableHead>
-                    <TableHead className="whitespace-nowrap">Condición IVA</TableHead>
-                    <TableHead className="whitespace-nowrap">Correo</TableHead>
-                    <TableHead className="whitespace-nowrap">Teléfono</TableHead>
-                    <TableHead className="whitespace-nowrap">Dirección</TableHead>
-                    <TableHead className="whitespace-nowrap">Fecha Registro</TableHead>
-                    <TableHead className="whitespace-nowrap">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredClientes.map((cliente) => (
-                    <TableRow key={cliente.id}>
-                      <TableCell className="whitespace-nowrap">
-                        {cliente.tipo_cliente === 'PERSONA_FISICA' ? (
-                          <span className="flex items-center">
-                            <UserCheck className="mr-1 h-4 w-4" /> Persona
-                          </span>
-                        ) : (
-                          <span className="flex items-center">
-                            <Building className="mr-1 h-4 w-4" /> Empresa
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="font-medium whitespace-nowrap">{cliente.nombre}</TableCell>
-                      <TableCell className="whitespace-nowrap">{cliente.apellido}</TableCell>
-                      <TableCell className="whitespace-nowrap">{cliente.empresa}</TableCell>
-                      <TableCell className="whitespace-nowrap">{cliente.dni}</TableCell>
-                      <TableCell className="whitespace-nowrap">{cliente.cuit}</TableCell>
-                      <TableCell className="whitespace-nowrap">{cliente.tipo_iva?.nombre || ''}</TableCell>
-                      <TableCell className="whitespace-nowrap">{cliente.correo}</TableCell>
-                      <TableCell className="whitespace-nowrap">{cliente.telefono}</TableCell>
-                      <TableCell className="whitespace-nowrap max-w-[200px] truncate">{cliente.direccion}</TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {new Date(cliente.created_at).toLocaleDateString('es-AR')}
-                      </TableCell>
-                      <TableCell>
-                      
-                      <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="h-8 px-2 mr-2"
-                      onClick={() => handleEditClient(cliente)}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="h-8 px-2 text-red-500 hover:text-red-700"
-                      onClick={() => {
-                        setClientToDelete(cliente);
-                        setIsDeleteDialogOpen(true);
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                    
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            </div>
+<div className="hidden md:block rounded-md border overflow-auto">
+  <div className="max-h-[calc(100vh-300px)] overflow-y-auto w-full">
+    <Table className="min-w-full">
+      <TableHeader className="sticky top-0 bg-background z-10">
+        <TableRow>
+          <TableHead className="w-[100px]">Tipo</TableHead>
+          <TableHead className="min-w-[120px]">Nombre</TableHead>
+          <TableHead className="min-w-[120px]">Apellido</TableHead>
+          <TableHead className="min-w-[150px]">Empresa</TableHead>
+          <TableHead className="w-[100px]">DNI</TableHead>
+          <TableHead className="w-[120px]">CUIT</TableHead>
+          <TableHead className="min-w-[150px]">Condición IVA</TableHead>
+          <TableHead className="min-w-[150px]">Correo</TableHead>
+          <TableHead className="min-w-[120px]">Teléfono</TableHead>
+          <TableHead className="min-w-[200px]">Dirección</TableHead>
+          <TableHead className="w-[120px]">Registro</TableHead>
+          <TableHead className="w-[120px]">Acciones</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {filteredClientes.map((cliente) => (
+          <TableRow key={cliente.id} className="hover:bg-muted/50">
+            <TableCell>
+              {cliente.tipo_cliente === 'PERSONA_FISICA' ? (
+                <span className="flex items-center">
+                  <UserCheck className="mr-1 h-4 w-4" /> Persona
+                </span>
+              ) : (
+                <span className="flex items-center">
+                  <Building className="mr-1 h-4 w-4" /> Empresa
+                </span>
+              )}
+            </TableCell>
+            <TableCell className="font-medium">{cliente.nombre}</TableCell>
+            <TableCell>{cliente.apellido}</TableCell>
+            <TableCell className="truncate max-w-[150px]">{cliente.empresa}</TableCell>
+            <TableCell>{cliente.dni}</TableCell>
+            <TableCell>{cliente.cuit}</TableCell>
+            <TableCell>{cliente.tipo_iva?.nombre || ''}</TableCell>
+            <TableCell className="truncate max-w-[150px]">{cliente.correo}</TableCell>
+            <TableCell>{cliente.telefono}</TableCell>
+            <TableCell className="truncate max-w-[200px]">{cliente.direccion}</TableCell>
+            <TableCell>
+              {new Date(cliente.created_at).toLocaleDateString('es-AR')}
+            </TableCell>
+            <TableCell>
+              <div className="flex space-x-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-8 px-2"
+                  onClick={() => handleEditClient(cliente)}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-8 px-2 text-red-500 hover:text-red-700"
+                  onClick={() => {
+                    setClientToDelete(cliente);
+                    setIsDeleteDialogOpen(true);
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  </div>
+</div>
           </div>
         </CardContent>
       </Card>
