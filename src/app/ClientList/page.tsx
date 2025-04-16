@@ -200,10 +200,6 @@ const ClientList: React.FC = () => {
     // Validaciones dinámicas
     const errores: string[] = [];
   
-    if (!formData.dni) {
-      errores.push("El DNI es obligatorio.");
-    }
-  
     if (!formData.tipo_iva_id) {
       errores.push("La condición frente al IVA es obligatoria.");
     }
@@ -223,26 +219,8 @@ const ClientList: React.FC = () => {
     }
   
     try {
-      // Verificación de DNI duplicado al crear nuevo cliente
-      if (!isEditing) {
-        const { data: dniExistente, error: dniError } = await supabase
-          .from("clientes")
-          .select("id")
-          .eq("dni", formData.dni)
-          .single();
-  
-        if (dniExistente) {
-          setFormError("El DNI ya está en uso.");
-          setIsSubmitting(false);
-          return;
-        }
-  
-        if (dniError && dniError.code !== "PGRST116") {
-          // PGRST116 es "No rows found" en modo single
-          throw dniError;
-        }
-      }
-  
+      // Eliminamos la verificación de DNI duplicado ya que dejó de ser único
+      
       if (isEditing && selectedClientId) {
         const { error } = await supabase
           .from("clientes")
@@ -440,7 +418,7 @@ const ClientList: React.FC = () => {
                           <Input
                             id="dni"
                             name="dni"
-                            required
+                            
                             value={formData.dni}
                             onChange={handleInputChange}
                           />
@@ -470,6 +448,7 @@ const ClientList: React.FC = () => {
   onChange={handleInputChange}
   required={activeTab === "EMPRESA"} // solo requerido si es empresa
 />
+
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="nombre">Nombre Contacto</Label>
@@ -497,7 +476,7 @@ const ClientList: React.FC = () => {
                             id="dni"
                             name="dni"
                             value={formData.dni}
-                            required={activeTab === "EMPRESA"} // solo requerido si es empresa
+                            
                             onChange={handleInputChange}
                           />
                         </div>
