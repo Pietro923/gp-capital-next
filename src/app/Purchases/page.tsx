@@ -15,12 +15,15 @@ import {
 import {
   Select,
   SelectContent,
+  
   SelectItem,
+  
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar } from "lucide-react";
+import { Calendar, Download } from "lucide-react";
 import { supabase } from '@/utils/supabase/client';
+import * as XLSX from 'xlsx';
 
 interface Provider {
   status: string;
@@ -38,7 +41,11 @@ interface Purchase {
   date: string;
   provider: string;
   product: string;
-  amount: number;
+  netoAmount: number;
+  ivaAmount: number;
+  otrosAmount: number;
+  totalAmount: number;
+  comentarios: string;
   status: string;
 }
 
@@ -48,18 +55,37 @@ export default function Purchases() {
   const [, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [formaPagoId, setFormaPagoId] = useState<string>('');
-
+  
   // Estado para el formulario
   const [formData, setFormData] = useState({
     providerId: '',
-    amount: '',
+    netoAmount: '',
+    ivaPercentage: '21',
+    otrosAmount: '0',
     date: '',
     product: '',
-    quantity: '1', // Agregado campo cantidad
+    quantity: '1',
+    comentarios: ''
   });
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Calcular montos
+  const calcularIVA = () => {
+    if (!formData.netoAmount) return 0;
+    const neto = parseFloat(formData.netoAmount);
+    const ivaPercentage = parseFloat(formData.ivaPercentage) / 100;
+    return neto * ivaPercentage;
+  };
 
+  const calcularTotal = () => {
+    if (!formData.netoAmount) return 0;
+    const neto = parseFloat(formData.netoAmount);
+    const iva = calcularIVA();
+    const otros = parseFloat(formData.otrosAmount) || 0;
+    return neto + iva + otros;
+  };
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
   // Cargar forma de pago por defecto
   useEffect(() => {
     const fetchFormaPago = async () => {
@@ -68,7 +94,6 @@ export default function Purchases() {
           .from('formas_pago')
           .select('id')
           .limit(1);
-
         if (error) throw error;
         if (data && data.length > 0) {
           setFormaPagoId(data[0].id);
@@ -77,7 +102,6 @@ export default function Purchases() {
         console.error('Error fetching forma_pago:', error);
       }
     };
-
     fetchFormaPago();
   }, []);
 
@@ -86,12 +110,10 @@ export default function Purchases() {
     const fetchProveedores = async () => {
       setIsLoading(true);
       setError(null);
-
       try {
         const { data, error } = await supabase
           .from('proveedores')
           .select('*');
-
         if (error) throw error;
         setProviders(data || []);
       } catch (error) {
@@ -101,7 +123,6 @@ export default function Purchases() {
         setIsLoading(false);
       }
     };
-
     fetchProveedores();
   }, []);
 
@@ -122,21 +143,26 @@ export default function Purchases() {
           `)
           .order('fecha_compra', { ascending: false });
         if (error) throw error;
+        
         const formattedPurchases = data.map(purchase => ({
           id: purchase.id,
           date: purchase.fecha_compra,
           provider: purchase.proveedores?.nombre || 'Desconocido',
           product: purchase.detalles_compra[0]?.descripcion || 'Sin detalle',
-          amount: purchase.total_factura,
-          status: 'Completado'
+          netoAmount: purchase.total_neto || 0,
+          ivaAmount: purchase.iva || 0,
+          otrosAmount: purchase.otros_gastos || 0,
+          totalAmount: purchase.total_factura || 0,
+          comentarios: purchase.comentarios || '',
+          status: purchase.estado || 'Completado'
         }));
+        
         setPurchases(formattedPurchases);
       } catch (error) {
         console.error('Error fetching purchases:', error);
         setError('Error al cargar las compras');
       }
     };
-
     fetchPurchases();
   }, []);
 
@@ -150,36 +176,42 @@ export default function Purchases() {
 
   // Registrar nueva compra
   const handleSubmit = async () => {
-    if (!formData.providerId || !formData.amount || !formData.date || !formData.product) {
-      setError('Por favor complete todos los campos');
+    if (!formData.providerId || !formData.netoAmount || !formData.date || !formData.product) {
+      setError('Por favor complete todos los campos obligatorios');
       return;
     }
-
+    
     setIsSubmitting(true);
     setError(null);
-
+    
     try {
       const provider = providers.find(p => p.id.toString() === formData.providerId);
+      const netoAmount = parseFloat(formData.netoAmount);
+      const ivaAmount = calcularIVA();
+      const otrosAmount = parseFloat(formData.otrosAmount) || 0;
+      const totalAmount = calcularTotal();
       
       // Insertar la compra principal
-const { data: compraData, error: compraError } = await supabase
-.from('compras')
-.insert([
-  {
-    proveedor_id: formData.providerId, // Use the provider ID instead of name
-    total_factura: parseFloat(formData.amount),
-    fecha_compra: formData.date,
-    tipo_factura: 'A',
-    total_neto: parseFloat(formData.amount) / 1.21,
-    iva: (parseFloat(formData.amount) / 1.21) * 0.21,
-    forma_pago_id: formaPagoId,
-    numero_factura: `F-${Date.now()}`
-  }
-])
-.select();
-
+      const { data: compraData, error: compraError } = await supabase
+        .from('compras')
+        .insert([
+          {
+            proveedor_id: formData.providerId,
+            total_factura: totalAmount,
+            fecha_compra: formData.date,
+            tipo_factura: 'A',
+            total_neto: netoAmount,
+            iva: ivaAmount,
+            otros_gastos: otrosAmount,
+            forma_pago_id: formaPagoId,
+            numero_factura: `F-${Date.now()}`,
+            comentarios: formData.comentarios
+          }
+        ])
+        .select();
+        
       if (compraError) throw compraError;
-
+      
       // Insertar en detalles_compra
       const { error: detalleError } = await supabase
         .from('detalles_compra')
@@ -188,37 +220,90 @@ const { data: compraData, error: compraError } = await supabase
             compra_id: compraData[0].id,
             descripcion: formData.product,
             cantidad: parseInt(formData.quantity),
-            precio_unitario: parseFloat(formData.amount) / parseInt(formData.quantity),
-            subtotal: parseFloat(formData.amount)
+            precio_unitario: netoAmount / parseInt(formData.quantity),
+            subtotal: netoAmount
           }
         ]);
-
+        
       if (detalleError) throw detalleError;
-
+      
       // Actualizar la lista de compras
-setPurchases(prev => [{
-  id: compraData[0].id,
-  date: compraData[0].fecha_compra,
-  provider: provider?.nombre || 'Desconocido', // Usar el nombre del proveedor del objeto provider
-  product: formData.product,
-  amount: compraData[0].total_factura,
-  status: 'Completado'
-}, ...prev]);
-
+      setPurchases(prev => [{
+        id: compraData[0].id,
+        date: compraData[0].fecha_compra,
+        provider: provider?.nombre || 'Desconocido',
+        product: formData.product,
+        netoAmount: netoAmount,
+        ivaAmount: ivaAmount,
+        otrosAmount: otrosAmount,
+        totalAmount: totalAmount,
+        comentarios: formData.comentarios,
+        status: 'Completado'
+      }, ...prev]);
+      
       // Limpiar el formulario
       setFormData({
         providerId: '',
-        amount: '',
+        netoAmount: '',
+        ivaPercentage: '21',
+        otrosAmount: '0',
         date: '',
         product: '',
-        quantity: '1'
+        quantity: '1',
+        comentarios: ''
       });
-
+      
     } catch (error) {
       console.error('Error registering purchase:', error);
       setError('Error al registrar la compra');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Función para exportar a Excel
+  const exportToExcel = () => {
+    try {
+      // Preparar los datos para el Excel
+      const dataToExport = purchases.map(item => ({
+        'Fecha': item.date,
+        'Proveedor': item.provider,
+        'Producto': item.product,
+        'Neto': item.netoAmount,
+        'IVA': item.ivaAmount,
+        'Otros': item.otrosAmount,
+        'Total': item.totalAmount,
+        'Comentarios': item.comentarios,
+        'Estado': item.status
+      }));
+      
+      // Crear una nueva hoja de trabajo
+      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+      
+      // Ajustar el ancho de las columnas
+      const wscols = [
+        { wch: 15 }, // Fecha
+        { wch: 20 }, // Proveedor
+        { wch: 30 }, // Producto
+        { wch: 12 }, // Neto
+        { wch: 12 }, // IVA
+        { wch: 12 }, // Otros
+        { wch: 12 }, // Total
+        { wch: 30 }, // Comentarios
+        { wch: 15 }, // Estado
+      ];
+      worksheet['!cols'] = wscols;
+      
+      // Crear un libro de trabajo
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Compras');
+      
+      // Generar el archivo Excel y descargarlo
+      const date = new Date().toISOString().split('T')[0];
+      XLSX.writeFile(workbook, `Reporte_Compras_${date}.xlsx`);
+    } catch (error) {
+      console.error('Error al exportar a Excel:', error);
+      setError('Error al exportar a Excel');
     }
   };
 
@@ -248,6 +333,7 @@ setPurchases(prev => [{
                 </SelectContent>
               </Select>
             </div>
+            
             <div className="space-y-2">
               <Label>Producto</Label>
               <Input 
@@ -257,6 +343,7 @@ setPurchases(prev => [{
                 onChange={(e) => handleChange('product', e.target.value)}
               />
             </div>
+            
             <div className="space-y-2">
               <Label>Cantidad</Label>
               <Input 
@@ -267,15 +354,44 @@ setPurchases(prev => [{
                 onChange={(e) => handleChange('quantity', e.target.value)}
               />
             </div>
+            
             <div className="space-y-2">
-              <Label>Monto Total</Label>
+              <Label>Neto</Label>
               <Input 
                 type="number" 
                 placeholder="0.00"
-                value={formData.amount}
-                onChange={(e) => handleChange('amount', e.target.value)}
+                value={formData.netoAmount}
+                onChange={(e) => handleChange('netoAmount', e.target.value)}
               />
             </div>
+            
+            <div className="space-y-2">
+  <Label htmlFor="ivaPercentage">IVA (%)</Label>
+  <Input
+    id="ivaPercentage"
+    type="number"
+    step="0.01"
+    min="0"
+    placeholder="Ej: 21%"
+    value={formData.ivaPercentage}
+    onChange={(e) => handleChange('ivaPercentage', e.target.value)}
+  />
+  <div className="text-sm text-gray-500 mt-1">
+    Valor: ${calcularIVA().toFixed(2)}
+  </div>
+</div>
+
+            
+            <div className="space-y-2">
+              <Label>Otros</Label>
+              <Input 
+                type="number" 
+                placeholder="0.00"
+                value={formData.otrosAmount}
+                onChange={(e) => handleChange('otrosAmount', e.target.value)}
+              />
+            </div>
+            
             <div className="space-y-2">
               <Label>Fecha</Label>
               <div className="relative">
@@ -287,9 +403,35 @@ setPurchases(prev => [{
                 <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-gray-500" />
               </div>
             </div>
+            
+            <div className="space-y-2">
+              <Label>Comentarios</Label>
+              <Input 
+                type="text" 
+                placeholder="Detalles de 'Otros'"
+                value={formData.comentarios}
+                onChange={(e) => handleChange('comentarios', e.target.value)}
+              />
+            </div>
+
+            <div className="col-span-1 sm:col-span-2">
+              <div className="bg-gray-50 p-3 rounded-md">
+                <div className="flex justify-between font-semibold mb-1">
+                  <span>Total:</span>
+                  <span>${calcularTotal().toFixed(2)}</span>
+                </div>
+                <div className="text-sm text-gray-500">
+                  Neto: ${parseFloat(formData.netoAmount || '0').toFixed(2)} + 
+                  IVA: ${calcularIVA().toFixed(2)} + 
+                  Otros: ${parseFloat(formData.otrosAmount || '0').toFixed(2)}
+                </div>
+              </div>
+            </div>
+            
             <div className="col-span-1 sm:col-span-2">
               {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
             </div>
+            
             <div className="col-span-1 sm:col-span-2">
               <Button 
                 className="w-full" 
@@ -302,9 +444,19 @@ setPurchases(prev => [{
           </div>
         </CardContent>
       </Card>
+      
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Historial de Compras</CardTitle>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={exportToExcel} 
+            className="flex items-center gap-1"
+          >
+            <Download className="h-4 w-4" />
+            Exportar a Excel
+          </Button>
         </CardHeader>
         <CardContent className="p-0 sm:p-6">
           <div className="overflow-x-auto">
@@ -314,7 +466,11 @@ setPurchases(prev => [{
                   <TableHead className="hidden sm:table-cell">Fecha</TableHead>
                   <TableHead>Proveedor</TableHead>
                   <TableHead className="hidden md:table-cell">Producto</TableHead>
-                  <TableHead>Monto</TableHead>
+                  <TableHead>Neto</TableHead>
+                  <TableHead>IVA</TableHead>
+                  <TableHead>Otros</TableHead>
+                  <TableHead>Total</TableHead>
+                  <TableHead>Comentarios</TableHead>
                   <TableHead className="hidden sm:table-cell">Estado</TableHead>
                 </TableRow>
               </TableHeader>
@@ -324,7 +480,11 @@ setPurchases(prev => [{
                     <TableCell className="hidden sm:table-cell">{purchase.date}</TableCell>
                     <TableCell className="font-medium">{purchase.provider}</TableCell>
                     <TableCell className="hidden md:table-cell">{purchase.product}</TableCell>
-                    <TableCell>${purchase.amount.toLocaleString()}</TableCell>
+                    <TableCell>${purchase.netoAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</TableCell>
+                    <TableCell>${purchase.ivaAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</TableCell>
+                    <TableCell>${purchase.otrosAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</TableCell>
+                    <TableCell>${purchase.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</TableCell>
+                    <TableCell>{purchase.comentarios}</TableCell>
                     <TableCell className="hidden sm:table-cell">{purchase.status}</TableCell>
                   </TableRow>
                 ))}
