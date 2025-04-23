@@ -15,9 +15,8 @@ import {
 import {
   Select,
   SelectContent,
-  
+  SelectGroup,
   SelectItem,
-  
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -47,6 +46,9 @@ interface Purchase {
   totalAmount: number;
   comentarios: string;
   status: string;
+  comprobante: string;
+  tipoComprobante: string;
+  puntoVenta: string;
 }
 
 export default function Purchases() {
@@ -65,7 +67,10 @@ export default function Purchases() {
     date: '',
     product: '',
     quantity: '1',
-    comentarios: ''
+    comentarios: '',
+    comprobante: '',
+    tipoComprobante: 'A',
+    puntoVenta: ''
   });
 
   // Calcular montos
@@ -154,7 +159,10 @@ export default function Purchases() {
           otrosAmount: purchase.otros_gastos || 0,
           totalAmount: purchase.total_factura || 0,
           comentarios: purchase.comentarios || '',
-          status: purchase.estado || 'Completado'
+          status: purchase.estado || 'Completado',
+          comprobante: purchase.numero_factura || '',
+          tipoComprobante: purchase.tipo_factura || 'A',
+          puntoVenta: purchase.punto_venta || ''
         }));
         
         setPurchases(formattedPurchases);
@@ -191,6 +199,11 @@ export default function Purchases() {
       const otrosAmount = parseFloat(formData.otrosAmount) || 0;
       const totalAmount = calcularTotal();
       
+      // Crear número de factura compuesto
+      const numeroFactura = formData.comprobante ? 
+        `${formData.puntoVenta}-${formData.comprobante}` : 
+        `F-${Date.now()}`;
+      
       // Insertar la compra principal
       const { data: compraData, error: compraError } = await supabase
         .from('compras')
@@ -199,12 +212,13 @@ export default function Purchases() {
             proveedor_id: formData.providerId,
             total_factura: totalAmount,
             fecha_compra: formData.date,
-            tipo_factura: 'A',
+            tipo_factura: formData.tipoComprobante,
             total_neto: netoAmount,
             iva: ivaAmount,
             otros_gastos: otrosAmount,
             forma_pago_id: formaPagoId,
-            numero_factura: `F-${Date.now()}`,
+            numero_factura: numeroFactura,
+            punto_venta: formData.puntoVenta,
             comentarios: formData.comentarios
           }
         ])
@@ -238,7 +252,10 @@ export default function Purchases() {
         otrosAmount: otrosAmount,
         totalAmount: totalAmount,
         comentarios: formData.comentarios,
-        status: 'Completado'
+        status: 'Completado',
+        comprobante: formData.comprobante,
+        tipoComprobante: formData.tipoComprobante,
+        puntoVenta: formData.puntoVenta
       }, ...prev]);
       
       // Limpiar el formulario
@@ -250,7 +267,10 @@ export default function Purchases() {
         date: '',
         product: '',
         quantity: '1',
-        comentarios: ''
+        comentarios: '',
+        comprobante: '',
+        tipoComprobante: 'A',
+        puntoVenta: ''
       });
       
     } catch (error) {
@@ -269,6 +289,9 @@ export default function Purchases() {
         'Fecha': item.date,
         'Proveedor': item.provider,
         'Producto': item.product,
+        'Tipo Comp.': item.tipoComprobante,
+        'N° Comp.': item.comprobante,
+        'Punto Venta': item.puntoVenta,
         'Neto': item.netoAmount,
         'IVA': item.ivaAmount,
         'Otros': item.otrosAmount,
@@ -285,6 +308,9 @@ export default function Purchases() {
         { wch: 15 }, // Fecha
         { wch: 20 }, // Proveedor
         { wch: 30 }, // Producto
+        { wch: 10 }, // Tipo Comprobante
+        { wch: 15 }, // N° Comprobante
+        { wch: 12 }, // Punto Venta
         { wch: 12 }, // Neto
         { wch: 12 }, // IVA
         { wch: 12 }, // Otros
@@ -314,7 +340,7 @@ export default function Purchases() {
           <CardTitle>Nueva Compra</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Proveedor</Label>
               <Select 
@@ -354,6 +380,45 @@ export default function Purchases() {
                 onChange={(e) => handleChange('quantity', e.target.value)}
               />
             </div>
+
+            <div className="space-y-2">
+              <Label>Tipo de Comprobante</Label>
+              <Select
+                onValueChange={(value) => handleChange('tipoComprobante', value)}
+                value={formData.tipoComprobante}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Seleccionar Tipo de Comprobante" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="A">A</SelectItem>
+                    <SelectItem value="B">B</SelectItem>
+                    <SelectItem value="C">C</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="space-y-2">
+              <Label>Punto de Venta</Label>
+              <Input 
+                type="text" 
+                placeholder="0000"
+                value={formData.puntoVenta}
+                onChange={(e) => handleChange('puntoVenta', e.target.value)}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label>Nº de comprobante</Label>
+              <Input 
+                type="text" 
+                placeholder="Número de factura o comprobante"
+                value={formData.comprobante}
+                onChange={(e) => handleChange('comprobante', e.target.value)}
+              />
+            </div>
             
             <div className="space-y-2">
               <Label>Neto</Label>
@@ -380,7 +445,6 @@ export default function Purchases() {
     Valor: ${calcularIVA().toFixed(2)}
   </div>
 </div>
-
             
             <div className="space-y-2">
               <Label>Otros</Label>
@@ -408,13 +472,13 @@ export default function Purchases() {
               <Label>Comentarios</Label>
               <Input 
                 type="text" 
-                placeholder="Detalles de 'Otros'"
+                placeholder="Detalles adicionales"
                 value={formData.comentarios}
                 onChange={(e) => handleChange('comentarios', e.target.value)}
               />
             </div>
 
-            <div className="col-span-1 sm:col-span-2">
+            <div className="col-span-1 sm:col-span-3">
               <div className="bg-gray-50 p-3 rounded-md">
                 <div className="flex justify-between font-semibold mb-1">
                   <span>Total:</span>
@@ -428,11 +492,11 @@ export default function Purchases() {
               </div>
             </div>
             
-            <div className="col-span-1 sm:col-span-2">
+            <div className="col-span-1 sm:col-span-3">
               {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
             </div>
             
-            <div className="col-span-1 sm:col-span-2">
+            <div className="col-span-1 sm:col-span-3">
               <Button 
                 className="w-full" 
                 onClick={handleSubmit}
@@ -466,11 +530,14 @@ export default function Purchases() {
                   <TableHead className="hidden sm:table-cell">Fecha</TableHead>
                   <TableHead>Proveedor</TableHead>
                   <TableHead className="hidden md:table-cell">Producto</TableHead>
+                  <TableHead className="hidden md:table-cell">Tipo</TableHead>
+                  <TableHead className="hidden lg:table-cell">Punto de Venta</TableHead>
+                  <TableHead className="hidden lg:table-cell">Nº Comprobante</TableHead>
                   <TableHead>Neto</TableHead>
                   <TableHead>IVA</TableHead>
                   <TableHead>Otros</TableHead>
                   <TableHead>Total</TableHead>
-                  <TableHead>Comentarios</TableHead>
+                  <TableHead className="hidden lg:table-cell">Comentarios</TableHead>
                   <TableHead className="hidden sm:table-cell">Estado</TableHead>
                 </TableRow>
               </TableHeader>
@@ -480,11 +547,14 @@ export default function Purchases() {
                     <TableCell className="hidden sm:table-cell">{purchase.date}</TableCell>
                     <TableCell className="font-medium">{purchase.provider}</TableCell>
                     <TableCell className="hidden md:table-cell">{purchase.product}</TableCell>
+                    <TableCell className="hidden md:table-cell">{purchase.tipoComprobante}</TableCell>
+                    <TableCell className="hidden lg:table-cell">{purchase.puntoVenta}</TableCell>
+                    <TableCell className="hidden lg:table-cell">{purchase.comprobante}</TableCell>
                     <TableCell>${purchase.netoAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</TableCell>
                     <TableCell>${purchase.ivaAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</TableCell>
                     <TableCell>${purchase.otrosAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</TableCell>
                     <TableCell>${purchase.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</TableCell>
-                    <TableCell>{purchase.comentarios}</TableCell>
+                    <TableCell className="hidden lg:table-cell">{purchase.comentarios}</TableCell>
                     <TableCell className="hidden sm:table-cell">{purchase.status}</TableCell>
                   </TableRow>
                 ))}
