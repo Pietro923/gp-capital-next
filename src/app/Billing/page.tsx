@@ -21,7 +21,6 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Receipt, Trash2, Download, CheckCircle, FileText, Calendar } from "lucide-react";
 import { supabase } from '@/utils/supabase/client';
 import jsPDF from 'jspdf';
@@ -140,7 +139,7 @@ const Billing: React.FC = () => {
 
   // Estados para los datos externos
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [tiposIva, setTiposIva] = useState<TipoIva[]>([]);
+  const [, setTiposIva] = useState<TipoIva[]>([]);
   const [formasPago, setFormasPago] = useState<FormaPago[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -157,7 +156,7 @@ const Billing: React.FC = () => {
     cae: '',
     caeVencimiento: '',
   });
-  const [facturaIdToUpdate, setFacturaIdToUpdate] = useState<string | null>(null);
+  //const [facturaIdToUpdate, setFacturaIdToUpdate] = useState<string | null>(null);
 
   // Cargar datos necesarios
   useEffect(() => {
@@ -322,9 +321,10 @@ const Billing: React.FC = () => {
       
       // Crear el documento PDF
       const doc = new jsPDF();
-      const fecha = facturaData.fecha_factura ? 
-        new Date(facturaData.fecha_factura).toLocaleDateString() :
-        new Date(facturaData.created_at).toLocaleDateString();
+      const fechaFactura = facturaData.fecha_factura ? 
+      new Date(facturaData.fecha_factura + 'T12:00:00') : 
+      new Date(facturaData.created_at);
+      const fecha = fechaFactura.toLocaleDateString('es-AR');
       
       // Encabezado
       doc.setFontSize(18);
@@ -344,16 +344,15 @@ const Billing: React.FC = () => {
         doc.setFontSize(10);
         doc.text(`CAE: ${facturaData.cae}`, 105, 50, { align: 'center' });
         if (facturaData.cae_vencimiento) {
-          const fechaVencimiento = new Date(facturaData.cae_vencimiento).toLocaleDateString();
-          doc.text(`Vencimiento CAE: ${fechaVencimiento}`, 105, 55, { align: 'center' });
-        }
+  const fechaVencimiento = new Date(facturaData.cae_vencimiento + 'T12:00:00').toLocaleDateString('es-AR');
+  doc.text(`Vencimiento CAE: ${fechaVencimiento}`, 105, 55, { align: 'center' });
+}
       }
       
       // Datos del emisor
       doc.setFontSize(10);
       doc.text('GP CAPITAL S.A.', 14, 60);
-      doc.text('CUIT: 30-12345678-9', 14, 65);
-      doc.text('Dirección: Av. Siempreviva 742', 14, 70);
+
       
       // Datos del cliente
       doc.text(`Cliente: ${facturaData.cliente.nombre} ${facturaData.cliente.apellido}`, 14, 85);
@@ -404,7 +403,8 @@ const Billing: React.FC = () => {
     }
   };
 
-  // Actualizar factura con datos de AFIP
+  {/*
+  / Actualizar factura con datos de AFIP
   const handleUpdateAfipData = async () => {
     if (!facturaIdToUpdate || !afipData.numeroFactura || !afipData.cae) {
       alert('Debe completar al menos el número de factura y CAE');
@@ -440,6 +440,7 @@ const Billing: React.FC = () => {
       alert('Error al actualizar los datos de AFIP');
     }
   };
+  
 
   // Abrir diálogo para actualizar datos AFIP
   const openAfipDialog = (factura: FacturaData) => {
@@ -451,6 +452,7 @@ const Billing: React.FC = () => {
     });
     setShowAfipDialog(true);
   };
+  */}
 
   // Generar factura
   const handleGenerarFactura = async () => {
@@ -838,7 +840,7 @@ const Billing: React.FC = () => {
                       {facturas.map((factura) => (
                         <TableRow key={factura.id}>
                           <TableCell>
-                            {new Date(factura.fecha_factura || factura.created_at).toLocaleDateString()}
+                            {new Date(factura.created_at).toLocaleDateString()}
                           </TableCell>
                           <TableCell>{factura.tipo_factura}</TableCell>
                           <TableCell>
