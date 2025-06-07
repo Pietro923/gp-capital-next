@@ -168,28 +168,34 @@ const ClientList: React.FC = () => {
   };
 
   const handleDeleteConfirm = async () => {
-    if (!clientToDelete) return;
+  if (!clientToDelete) return;
+  
+  try {
+    // En lugar de eliminar, marcar como eliminado
+    const { error } = await supabase
+      .from('clientes')
+      .update({ 
+        eliminado: true,
+        fecha_eliminacion: new Date().toISOString()
+      })
+      .eq('id', clientToDelete.id);
+      
+    if (error) throw error;
     
-    try {
-      const { error } = await supabase
-        .from('clientes')
-        .delete()
-        .eq('id', clientToDelete.id);
-        
-      if (error) throw error;
-      
-      // Actualizar la lista de clientes
-      setClientes(prevClientes => 
-        prevClientes.filter(c => c.id !== clientToDelete.id)
-      );
-      
-      setIsDeleteDialogOpen(false);
-      setClientToDelete(null);
-    } catch (error) {
-      console.error('Error al eliminar cliente:', error);
-      // Mostrar error
-    }
-  };
+    // Actualizar la lista de clientes (filtrar eliminados)
+    setClientes(prevClientes => 
+      prevClientes.filter(c => c.id !== clientToDelete.id)
+    );
+    
+    setIsDeleteDialogOpen(false);
+    setClientToDelete(null);
+  } catch (error) {
+    console.error('Error al eliminar cliente:', error);
+    setFormError('Error al eliminar el cliente. Por favor, intente nuevamente.');
+    setIsDeleteDialogOpen(false);
+    setClientToDelete(null);
+  }
+};
   
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -275,27 +281,28 @@ const ClientList: React.FC = () => {
   };
 
   const fetchClientes = async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const { data, error } = await supabase
-        .from('clientes')
-        .select(`
-          *,
-          tipo_iva:tipos_iva(id, nombre)
-        `)
-        .order('created_at', { ascending: false });
-      if (error) {
-        throw error;
-      }
-      setClientes(data || []);
-    } catch (error) {
-      console.error('Error fetching clientes:', error);
-      setError('Error al cargar los clientes');
-    } finally {
-      setIsLoading(false);
+  setIsLoading(true);
+  setError(null);
+  try {
+    const { data, error } = await supabase
+      .from('clientes')
+      .select(`
+        *,
+        tipo_iva:tipos_iva(id, nombre)
+      `)
+      .is('eliminado', false) // o .eq('eliminado', false) si usas boolean
+      .order('created_at', { ascending: false });
+    if (error) {
+      throw error;
     }
-  };
+    setClientes(data || []);
+  } catch (error) {
+    console.error('Error fetching clientes:', error);
+    setError('Error al cargar los clientes');
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   useEffect(() => {
     fetchClientes();

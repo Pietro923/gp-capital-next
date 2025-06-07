@@ -66,6 +66,7 @@ interface Cliente {
   empresa?: string;  // opcional si es persona
   direccion: string;
   dni?: string;
+  eliminado?: boolean; // 👈 Añade esta línea
 }
 
 const LoanSimulator: React.FC = () => {
@@ -116,7 +117,9 @@ const LoanSimulator: React.FC = () => {
         const { data: clientesData, error: clientesError } = await supabase
           .from('clientes')
           .select('*')
-          .order('apellido');
+          .order('apellido')
+          .eq('eliminado', false) // Solo clientes no eliminados
+          .order('created_at', { ascending: false });
   
         if (clientesError) throw clientesError;
         if (clientesData) setClientes(clientesData);

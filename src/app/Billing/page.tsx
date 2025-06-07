@@ -55,7 +55,7 @@ interface Cliente {
   empresa?: string;  // opcional si es persona
   direccion: string;
   dni?: string;
-
+  eliminado?: boolean; // 👈 Añade esta línea
   cuit: string;
   tipo_iva_id: string;
   tipo_iva?: { nombre: string };
@@ -160,35 +160,35 @@ const Billing: React.FC = () => {
 
   // Cargar datos necesarios
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Cargar clientes con información de condición IVA
-        const { data: clientesData } = await supabase
-          .from('clientes')
-          .select('*, tipo_iva:tipo_iva_id(nombre)');
-        if (clientesData) setClientes(clientesData);
-        
-        // Cargar tipos de IVA
-        const { data: tiposIvaData } = await supabase
-          .from('tipos_iva')
-          .select('*');
-        if (tiposIvaData) setTiposIva(tiposIvaData);
-        
-        // Cargar formas de pago
-        const { data: formasPagoData } = await supabase
-          .from('formas_pago')
-          .select('*');
-        if (formasPagoData) setFormasPago(formasPagoData);
-        
-        // Cargar historial de facturas
-        loadFacturasHistory();
-      } catch (error) {
-        console.error('Error cargando datos:', error);
-        setError('Error al cargar los datos necesarios');
-      }
-    };
-    fetchData();
-  }, []);
+  const fetchData = async () => {
+    try {
+      // Cargar clientes con información de condición IVA
+      const { data: clientesData } = await supabase
+        .from('clientes')
+        .select('*, tipo_iva:tipo_iva_id(nombre)')
+        .eq('eliminado', false); // 👈 Filtra solo clientes no eliminados
+      
+      if (clientesData) setClientes(clientesData);
+      
+      // El resto de tus llamadas permanecen igual...
+      const { data: tiposIvaData } = await supabase
+        .from('tipos_iva')
+        .select('*');
+      if (tiposIvaData) setTiposIva(tiposIvaData);
+      
+      const { data: formasPagoData } = await supabase
+        .from('formas_pago')
+        .select('*');
+      if (formasPagoData) setFormasPago(formasPagoData);
+      
+      loadFacturasHistory();
+    } catch (error) {
+      console.error('Error cargando datos:', error);
+      setError('Error al cargar los datos necesarios');
+    }
+  };
+  fetchData();
+}, []);
 
   // Cargar historial de facturas
   const loadFacturasHistory = async () => {
