@@ -22,7 +22,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Receipt, Trash2, Download, CheckCircle, FileText } from "lucide-react";
+import { Plus, Receipt, Trash2, Download, CheckCircle, FileText, Calendar } from "lucide-react";
 import { supabase } from '@/utils/supabase/client';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -41,6 +41,9 @@ interface InvoiceItem {
   description: string;
   quantity: number;
   unitPrice: number;
+  netoAmount: number;
+  ivaPercentage: number;
+  ivaAmount: number;
   total: number;
 }
 type TipoCliente = "PERSONA_FISICA" | "EMPRESA";
@@ -78,7 +81,8 @@ interface FacturaFormData {
   tipoIvaId: string;
   formaPagoId: string;
   puntoVenta: string;
-  numeroFactura: string; // Nueva propiedad
+  numeroFactura: string;
+  fecha: string; // Nueva propiedad para la fecha
 }
 
 // Add interface for factura data
@@ -97,6 +101,7 @@ interface FacturaData {
   cae_vencimiento?: string;
   afip_cargada: boolean;
   punto_venta: string;
+  fecha_factura: string; // Nueva propiedad
   cliente: { 
     nombre: string; 
     apellido: string; 
@@ -116,6 +121,9 @@ const Billing: React.FC = () => {
     description: '',
     quantity: 0,
     unitPrice: 0,
+    netoAmount: 0,
+    ivaPercentage: 21, // Por defecto 21%
+    ivaAmount: 0,
     total: 0
   });
 
@@ -126,7 +134,8 @@ const Billing: React.FC = () => {
     tipoIvaId: '',
     formaPagoId: '',
     puntoVenta: '0001',
-    numeroFactura: '', // Inicializar la nueva propiedad
+    numeroFactura: '',
+    fecha: new Date().toISOString().split('T')[0], // Fecha actual por defecto
   });
 
   // Estados para los datos externos
@@ -223,17 +232,45 @@ const Billing: React.FC = () => {
     }
   };
 
+  // Calcular IVA para un item
+  const calcularIVAItem = (netoAmount: number, ivaPercentage: number) => {
+    const iva = (netoAmount * ivaPercentage) / 100;
+    return iva;
+  };
+
+  // Manejar cambios en el nuevo item
+  const handleNewItemChange = (field: keyof InvoiceItem, value: string | number) => {
+    setNewItem(prev => {
+      const updated = { ...prev, [field]: value };
+      
+      // Recalcular automáticamente cuando cambian valores relevantes
+      if (field === 'netoAmount' || field === 'ivaPercentage') {
+        updated.ivaAmount = calcularIVAItem(updated.netoAmount, updated.ivaPercentage);
+        updated.total = updated.netoAmount + updated.ivaAmount;
+      }
+      
+      // Si cambia la cantidad o precio unitario, recalcular neto
+      if (field === 'quantity' || field === 'unitPrice') {
+        updated.netoAmount = updated.quantity * updated.unitPrice;
+        updated.ivaAmount = calcularIVAItem(updated.netoAmount, updated.ivaPercentage);
+        updated.total = updated.netoAmount + updated.ivaAmount;
+      }
+      
+      return updated;
+    });
+  };
+
   // Manejar items de la factura
   const handleAddItem = () => {
-    if (newItem.description && newItem.quantity && newItem.unitPrice) {
-      setItems([...items, {
-        ...newItem,
-        total: newItem.quantity * newItem.unitPrice
-      }]);
+    if (newItem.description && newItem.quantity && (newItem.unitPrice || newItem.netoAmount)) {
+      setItems([...items, { ...newItem }]);
       setNewItem({
         description: '',
         quantity: 0,
         unitPrice: 0,
+        netoAmount: 0,
+        ivaPercentage: 21,
+        ivaAmount: 0,
         total: 0
       });
     }
@@ -243,44 +280,10 @@ const Billing: React.FC = () => {
     setItems(items.filter((_, i) => i !== index));
   };
 
+  // Calcular totales
+  const totalNeto = items.reduce((sum, item) => sum + item.netoAmount, 0);
+  const totalIVA = items.reduce((sum, item) => sum + item.ivaAmount, 0);
   const total = items.reduce((sum, item) => sum + item.total, 0);
-  
-  // Calcular IVA según condición del cliente
-  const calcularIVA = (total: number, tipoIvaId: string) => {
-    // Buscar el tipo de IVA en el array de tiposIva
-    const tipoIva = tiposIva.find(t => t.id === tipoIvaId);
-    
-    if (!tipoIva) {
-      console.error('Tipo de IVA no encontrado para ID:', tipoIvaId);
-      return {
-        totalNeto: total,
-        iva: 0,
-        porcentajeIVA: 0
-      };
-    }
-  
-    // Convertir el porcentaje_iva de la base de datos a decimal
-    const porcentajeIVA = tipoIva.porcentaje_iva / 100;
-    
-    // Si el porcentaje es 0 (exento)
-    if (porcentajeIVA === 0) {
-      return {
-        totalNeto: total,
-        iva: 0,
-        porcentajeIVA: tipoIva.porcentaje_iva
-      };
-    }
-    
-    // Cálculo normal
-    const totalNeto = total / (1 + porcentajeIVA);
-    const iva = total - totalNeto;
-    
-    return {
-      totalNeto,
-      iva,
-      porcentajeIVA: tipoIva.porcentaje_iva
-    };
-  };
 
   // Manejar cambios en los datos de la factura
   const handleFacturaDataChange = (field: keyof FacturaFormData, value: string) => {
@@ -319,7 +322,9 @@ const Billing: React.FC = () => {
       
       // Crear el documento PDF
       const doc = new jsPDF();
-      const fecha = new Date(facturaData.created_at).toLocaleDateString();
+      const fecha = facturaData.fecha_factura ? 
+        new Date(facturaData.fecha_factura).toLocaleDateString() :
+        new Date(facturaData.created_at).toLocaleDateString();
       
       // Encabezado
       doc.setFontSize(18);
@@ -358,11 +363,13 @@ const Billing: React.FC = () => {
       doc.text(`Forma de Pago: ${facturaData.forma_pago.nombre}`, 14, 105);
       
       // Tabla de items
-      const tableColumn = ["Descripción", "Cantidad", "Precio Unit.", "Subtotal"];
+      const tableColumn = ["Descripción", "Cantidad", "Precio Unit.", "Neto", "IVA", "Total"];
       const tableRows = detallesData.map(detalle => [
         detalle.descripcion,
         detalle.cantidad,
         `$${detalle.precio_unitario.toFixed(2)}`,
+        `$${(detalle.cantidad * detalle.precio_unitario).toFixed(2)}`,
+        `$${(detalle.subtotal - (detalle.cantidad * detalle.precio_unitario)).toFixed(2)}`,
         `$${detalle.subtotal.toFixed(2)}`
       ]);
       
@@ -377,7 +384,7 @@ const Billing: React.FC = () => {
       // Totales
       const finalY = doc.lastAutoTable.finalY + 10;
       doc.text(`Subtotal: $${facturaData.total_neto.toFixed(2)}`, 140, finalY);
-      doc.text(`IVA (21%): $${facturaData.iva.toFixed(2)}`, 140, finalY + 7);
+      doc.text(`IVA: $${facturaData.iva.toFixed(2)}`, 140, finalY + 7);
       doc.text(`TOTAL: $${facturaData.total_factura.toFixed(2)}`, 140, finalY + 14);
       
       // Leyenda según si está cargada en AFIP o no
@@ -447,7 +454,7 @@ const Billing: React.FC = () => {
 
   // Generar factura
   const handleGenerarFactura = async () => {
-    if (!formData.tipoFactura || !formData.clienteId || !formData.tipoIvaId || !formData.formaPagoId || items.length === 0) {
+    if (!formData.tipoFactura || !formData.clienteId || !formData.tipoIvaId || !formData.formaPagoId || items.length === 0 || !formData.fecha) {
       setError('Por favor complete todos los campos necesarios');
       return;
     }
@@ -456,28 +463,26 @@ const Billing: React.FC = () => {
     setError(null);
     
     try {
-      // Calcular IVA según condición del cliente
-      const { totalNeto, iva } = calcularIVA(total, formData.tipoIvaId);
-      
       // Insertar la factura principal
-const { data: nuevaFactura, error: facturaError } = await supabase
-.from('facturacion')
-.insert([
-  {
-    tipo_factura: formData.tipoFactura,
-    cliente_id: formData.clienteId,
-    tipo_iva_id: formData.tipoIvaId,
-    forma_pago_id: formData.formaPagoId,
-    total_neto: totalNeto,
-    iva: iva,
-    total_factura: total,
-    punto_venta: formData.puntoVenta,
-    numero_factura: formData.numeroFactura ? parseInt(formData.numeroFactura) : null, // Añadir número de factura
-    afip_cargada: false
-  }
-])
-.select()
-.single();
+      const { data: nuevaFactura, error: facturaError } = await supabase
+        .from('facturacion')
+        .insert([
+          {
+            tipo_factura: formData.tipoFactura,
+            cliente_id: formData.clienteId,
+            tipo_iva_id: formData.tipoIvaId,
+            forma_pago_id: formData.formaPagoId,
+            total_neto: totalNeto,
+            iva: totalIVA,
+            total_factura: total,
+            punto_venta: formData.puntoVenta,
+            numero_factura: formData.numeroFactura ? parseInt(formData.numeroFactura) : null,
+            fecha_factura: formData.fecha, // Agregar fecha de factura
+            afip_cargada: false
+          }
+        ])
+        .select()
+        .single();
       
       if (facturaError) throw facturaError;
       if (!nuevaFactura) throw new Error('No se pudo crear la factura');
@@ -492,7 +497,7 @@ const { data: nuevaFactura, error: facturaError } = await supabase
               descripcion: item.description,
               cantidad: item.quantity,
               precio_unitario: item.unitPrice,
-              subtotal: item.total
+              subtotal: item.total // Usar el total que incluye IVA
             }
           ])
       );
@@ -515,8 +520,9 @@ const { data: nuevaFactura, error: facturaError } = await supabase
         clienteId: '',
         tipoIvaId: '',
         formaPagoId: '',
-        puntoVenta: formData.puntoVenta, // Mantener el punto de venta
-        numeroFactura: '', // Inicializar la nueva propiedad
+        puntoVenta: formData.puntoVenta,
+        numeroFactura: '',
+        fecha: new Date().toISOString().split('T')[0], // Reset a fecha actual
       });
       
       alert('Factura generada exitosamente');
@@ -572,6 +578,19 @@ const { data: nuevaFactura, error: facturaError } = await supabase
                   </div>
                   
                   <div className="space-y-2">
+                    <Label htmlFor="fecha">Fecha</Label>
+                    <div className="relative">
+                      <Input
+                        id="fecha"
+                        type="date"
+                        value={formData.fecha}
+                        onChange={(e) => handleFacturaDataChange('fecha', e.target.value)}
+                      />
+                      <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-gray-500" />
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
                     <Label htmlFor="puntoVenta">Punto de Venta</Label>
                     <Input
                       id="puntoVenta"
@@ -580,36 +599,37 @@ const { data: nuevaFactura, error: facturaError } = await supabase
                       placeholder="0001"
                     />
                   </div>
-                  <div className="space-y-2">
-  <Label htmlFor="numeroFactura">Número de Factura</Label>
-  <Input
-    id="numeroFactura"
-    value={formData.numeroFactura}
-    onChange={(e) => handleFacturaDataChange('numeroFactura', e.target.value)}
-    placeholder="00000001"
-  />
-</div>
                   
                   <div className="space-y-2">
-                              <Label>Cliente</Label>
-                              <Select 
-  value={formData.clienteId} 
-  onValueChange={(value) => handleClienteChange(value)}
->
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Seleccionar cliente" />
-                                </SelectTrigger>
-                                <SelectContent>
-    {clientes.map((cliente) => (
-      <SelectItem key={cliente.id} value={cliente.id}>
-        {cliente.tipo_cliente === "EMPRESA"
-          ? cliente.empresa
-          : `${cliente.apellido ? cliente.apellido + ', ' : ''}${cliente.nombre}`}
-      </SelectItem>
-    ))}
-  </SelectContent>
-                              </Select>
-                              </div>
+                    <Label htmlFor="numeroFactura">Número de Factura</Label>
+                    <Input
+                      id="numeroFactura"
+                      value={formData.numeroFactura}
+                      onChange={(e) => handleFacturaDataChange('numeroFactura', e.target.value)}
+                      placeholder="00000001"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Cliente</Label>
+                    <Select 
+                      value={formData.clienteId} 
+                      onValueChange={(value) => handleClienteChange(value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar cliente" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {clientes.map((cliente) => (
+                          <SelectItem key={cliente.id} value={cliente.id}>
+                            {cliente.tipo_cliente === "EMPRESA"
+                              ? cliente.empresa
+                              : `${cliente.apellido ? cliente.apellido + ', ' : ''}${cliente.nombre}`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   
                   <div className="space-y-2">
                     <Label htmlFor="formaPago">Forma de Pago</Label>
@@ -636,16 +656,16 @@ const { data: nuevaFactura, error: facturaError } = await supabase
             <Card>
               <CardHeader>
                 <CardTitle>Items de la Factura</CardTitle>
-                <CardDescription>Agregue los productos o servicios</CardDescription>
+                <CardDescription>Agregue los productos o servicios con detalle de impuestos</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid gap-4 md:grid-cols-4 items-end mb-4">
+                <div className="grid gap-4 md:grid-cols-6 items-end mb-4">
                   <div>
                     <Label htmlFor="itemDescription">Descripción</Label>
                     <Input
                       id="itemDescription"
                       value={newItem.description}
-                      onChange={(e) => setNewItem({...newItem, description: e.target.value})}
+                      onChange={(e) => handleNewItemChange('description', e.target.value)}
                       placeholder="Descripción del item"
                     />
                   </div>
@@ -655,26 +675,60 @@ const { data: nuevaFactura, error: facturaError } = await supabase
                       id="itemQuantity"
                       type="number"
                       value={newItem.quantity || ''}
-                      onChange={(e) => setNewItem({...newItem, quantity: Number(e.target.value), total: Number(e.target.value) * newItem.unitPrice})}
-                      placeholder="0"
+                      onChange={(e) => handleNewItemChange('quantity', Number(e.target.value))}
+                      placeholder="1"
                     />
                   </div>
                   <div>
-                    <Label htmlFor="itemPrice">Precio Unitario</Label>
+                    <Label htmlFor="itemPrice">Precio Unit.</Label>
                     <Input
                       id="itemPrice"
                       type="number"
+                      step="0.01"
                       value={newItem.unitPrice || ''}
-                      onChange={(e) => setNewItem({...newItem, unitPrice: Number(e.target.value), total: newItem.quantity * Number(e.target.value)})}
+                      onChange={(e) => handleNewItemChange('unitPrice', Number(e.target.value))}
                       placeholder="0.00"
                     />
                   </div>
-                  <Button 
-                    onClick={handleAddItem}
-                    className="flex items-center gap-1"
-                  >
-                    <Plus className="h-4 w-4" /> Agregar Item
-                  </Button>
+                  <div>
+                    <Label htmlFor="itemNeto">Neto</Label>
+                    <Input
+                      id="itemNeto"
+                      type="number"
+                      step="0.01"
+                      value={newItem.netoAmount || ''}
+                      onChange={(e) => handleNewItemChange('netoAmount', Number(e.target.value))}
+                      placeholder="0.00"
+                    />
+                    <div className="text-xs text-gray-500 mt-1">
+                      Auto: ${(newItem.quantity * newItem.unitPrice).toFixed(2)}
+                    </div>
+                  </div>
+                  <div>
+                    <Label htmlFor="itemIva">IVA (%)</Label>
+                    <Input
+                      id="itemIva"
+                      type="number"
+                      step="0.01"
+                      value={newItem.ivaPercentage || ''}
+                      onChange={(e) => handleNewItemChange('ivaPercentage', Number(e.target.value))}
+                      placeholder="21"
+                    />
+                    <div className="text-xs text-gray-500 mt-1">
+                      Valor: ${newItem.ivaAmount.toFixed(2)}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium">
+                      Total: ${newItem.total.toFixed(2)}
+                    </div>
+                    <Button 
+                      onClick={handleAddItem}
+                      className="flex items-center gap-1 w-full"
+                    >
+                      <Plus className="h-4 w-4" /> Agregar
+                    </Button>
+                  </div>
                 </div>
                 
                 {items.length > 0 ? (
@@ -683,9 +737,12 @@ const { data: nuevaFactura, error: facturaError } = await supabase
                       <TableHeader>
                         <TableRow>
                           <TableHead>Descripción</TableHead>
-                          <TableHead className="text-right">Cantidad</TableHead>
-                          <TableHead className="text-right">P. Unitario</TableHead>
-                          <TableHead className="text-right">Subtotal</TableHead>
+                          <TableHead className="text-right">Cant.</TableHead>
+                          <TableHead className="text-right">P. Unit.</TableHead>
+                          <TableHead className="text-right">Neto</TableHead>
+                          <TableHead className="text-right">IVA %</TableHead>
+                          <TableHead className="text-right">IVA $</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
                           <TableHead className="w-[50px]"></TableHead>
                         </TableRow>
                       </TableHeader>
@@ -695,127 +752,118 @@ const { data: nuevaFactura, error: facturaError } = await supabase
                             <TableCell>{item.description}</TableCell>
                             <TableCell className="text-right">{item.quantity}</TableCell>
                             <TableCell className="text-right">${item.unitPrice.toFixed(2)}</TableCell>
-                            <TableCell className="text-right">${item.total.toFixed(2)}</TableCell>
+                            <TableCell className="text-right">${item.netoAmount.toFixed(2)}</TableCell>
+                            <TableCell className="text-right">{item.ivaPercentage}%</TableCell>
+                            <TableCell className="text-right">${item.ivaAmount.toFixed(2)}</TableCell>
+                            <TableCell className="text-right font-medium">${item.total.toFixed(2)}</TableCell>
                             <TableCell>
                               <Button
-                                variant="ghost" 
-                                size="icon"
+                                variant="ghost"
+                                size="sm"
                                 onClick={() => handleRemoveItem(index)}
+                                className="h-8 w-8 p-0 text-red-600 hover:text-red-800"
                               >
-                                <Trash2 className="h-4 w-4 text-red-500" />
+                                <Trash2 className="h-4 w-4" />
                               </Button>
                             </TableCell>
                           </TableRow>
                         ))}
-                        <TableRow>
-                          <TableCell colSpan={3} className="text-right font-bold">Total:</TableCell>
-                          <TableCell className="text-right font-bold">${total.toFixed(2)}</TableCell>
+                        <TableRow className="border-t-2 font-medium">
+                          <TableCell colSpan={3} className="text-right">TOTALES:</TableCell>
+                          <TableCell className="text-right">${totalNeto.toFixed(2)}</TableCell>
+                          <TableCell></TableCell>
+                          <TableCell className="text-right">${totalIVA.toFixed(2)}</TableCell>
+                          <TableCell className="text-right text-lg font-bold">${total.toFixed(2)}</TableCell>
                           <TableCell></TableCell>
                         </TableRow>
                       </TableBody>
                     </Table>
                   </div>
                 ) : (
-                  <div className="text-center py-4 text-gray-500">
-                    No hay items agregados
+                  <div className="text-center py-8 text-gray-500">
+                    <Receipt className="mx-auto h-12 w-12 mb-4 opacity-50" />
+                    <p>No hay items agregados</p>
                   </div>
                 )}
-                {items.length > 0 && (
-  <div className="mt-4 p-4 border rounded-md">
-  <h3 className="font-medium mb-2">Resumen de Impuestos</h3>
-  <div className="grid grid-cols-3 gap-4">
-    <div>
-      <Label>Neto</Label>
-      <div className="mt-1 font-medium">
-        ${calcularIVA(total, formData.tipoIvaId).totalNeto.toFixed(2)}
-      </div>
-    </div>
-    <div>
-      <Label>IVA ({calcularIVA(total, formData.tipoIvaId).porcentajeIVA}%)</Label>
-      <div className="mt-1 font-medium">
-        ${calcularIVA(total, formData.tipoIvaId).iva.toFixed(2)}
-      </div>
-    </div>
-    <div>
-      <Label>Total</Label>
-      <div className="mt-1 font-medium">
-        ${total.toFixed(2)}
-      </div>
-    </div>
-  </div>
-</div>
-)}
+                
+                {error && (
+                  <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-700">
+                    {error}
+                  </div>
+                )}
+                
+                <div className="mt-6 flex justify-end">
+                  <Button 
+                    onClick={handleGenerarFactura}
+                    disabled={isLoading || items.length === 0}
+                    className="flex items-center gap-2"
+                  >
+                    {isLoading ? 'Generando...' : (
+                      <>
+                        <FileText className="h-4 w-4" />
+                        Generar Factura
+                      </>
+                    )}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
-            
-            <div className="flex justify-end gap-4">
-              <Button
-                className="flex items-center gap-2"
-                disabled={items.length === 0 || !formData.tipoFactura || !formData.clienteId || !formData.formaPagoId || isLoading}
-                onClick={handleGenerarFactura}
-              >
-                <Receipt className="h-4 w-4" />
-                {isLoading ? 'Generando...' : 'Generar Factura'}
-              </Button>
-            </div>
-            
-            {error && (
-              <div className="p-3 rounded-md bg-red-50 text-red-600 text-sm">
-                {error}
-              </div>
-            )}
           </div>
         </TabsContent>
         
         <TabsContent value="historial">
           <Card>
             <CardHeader>
-              <CardTitle>Facturas Emitidas</CardTitle>
-              <CardDescription>Historial de las últimas facturas emitidas</CardDescription>
+              <CardTitle>Historial de Facturas</CardTitle>
+              <CardDescription>Listado de todas las facturas generadas</CardDescription>
             </CardHeader>
             <CardContent>
               {isLoadingHistory ? (
-                <div className="text-center py-4">Cargando historial...</div>
+                <div className="text-center py-8">Cargando historial...</div>
               ) : facturas.length > 0 ? (
                 <div className="rounded-md border">
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead>Fecha</TableHead>
                         <TableHead>Tipo</TableHead>
                         <TableHead>Número</TableHead>
-                        <TableHead>Fecha</TableHead>
                         <TableHead>Cliente</TableHead>
                         <TableHead className="text-right">Total</TableHead>
                         <TableHead>Estado</TableHead>
-                        <TableHead className="text-right">Acciones</TableHead>
+                        <TableHead className="w-[100px]">Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {facturas.map((factura) => (
                         <TableRow key={factura.id}>
-                          <TableCell>Factura {factura.tipo_factura}</TableCell>
-                          <TableCell>{factura.punto_venta}-{String(factura.numero_factura).padStart(8, '0')}</TableCell>
-                          <TableCell>{new Date(factura.created_at).toLocaleDateString()}</TableCell>
-                          <TableCell>{factura.cliente.nombre} {factura.cliente.apellido}</TableCell>
+                          <TableCell>
+                            {new Date(factura.fecha_factura || factura.created_at).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell>{factura.tipo_factura}</TableCell>
+                          <TableCell>
+                            {factura.punto_venta 
+                              ? `${factura.punto_venta}-${String(factura.numero_factura).padStart(8, '0')}` 
+                              : String(factura.numero_factura).padStart(8, '0')
+                            }
+                          </TableCell>
+                          <TableCell>
+                            {factura.cliente.apellido 
+                              ? `${factura.cliente.apellido}, ${factura.cliente.nombre}`
+                              : factura.cliente.nombre
+                            }
+                          </TableCell>
                           <TableCell className="text-right">${factura.total_factura.toFixed(2)}</TableCell>
                           <TableCell>{getEstadoFactura(factura)}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
+                          <TableCell>
+                            <div className="flex gap-1">
                               <Button
+                                variant="ghost"
                                 size="sm"
-                                variant="outline"
-                                className="h-8 px-2"
                                 onClick={() => generatePDF(factura.id)}
+                                className="h-8 w-8 p-0"
                               >
                                 <Download className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-8 px-2"
-                                onClick={() => openAfipDialog(factura)}
-                              >
-                                <FileText className="h-4 w-4" />
                               </Button>
                             </div>
                           </TableCell>
@@ -825,62 +873,68 @@ const { data: nuevaFactura, error: facturaError } = await supabase
                   </Table>
                 </div>
               ) : (
-                <div className="text-center py-4 text-gray-500">
-                  No hay facturas emitidas
+                <div className="text-center py-8 text-gray-500">
+                  <Receipt className="mx-auto h-12 w-12 mb-4 opacity-50" />
+                  <p>No hay facturas generadas</p>
                 </div>
               )}
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
-      
-      {/* Diálogo para actualizar datos de AFIP */}
+
+      {/* Diálogo de AFIP */}
       <Dialog open={showAfipDialog} onOpenChange={setShowAfipDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Actualizar datos de factura</DialogTitle>
+            <DialogTitle>Actualizar datos de AFIP</DialogTitle>
             <DialogDescription>
-              Ingrese los datos oficiales para registrar la factura
+              Ingrese los datos obtenidos de AFIP para esta factura
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="numeroFactura">Número de factura</Label>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="afip-numero" className="text-right">
+                Número
+              </Label>
               <Input
-                id="numeroFactura"
+                id="afip-numero"
                 value={afipData.numeroFactura}
-                onChange={(e) => setAfipData({...afipData, numeroFactura: e.target.value})}
-                placeholder="Número de factura"
+                onChange={(e) => setAfipData(prev => ({...prev, numeroFactura: e.target.value}))}
+                className="col-span-3"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="cae">CAE</Label>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="afip-cae" className="text-right">
+                CAE
+              </Label>
               <Input
-                id="cae"
+                id="afip-cae"
                 value={afipData.cae}
-                onChange={(e) => setAfipData({...afipData, cae: e.target.value})}
-                placeholder="CAE"
+                onChange={(e) => setAfipData(prev => ({...prev, cae: e.target.value}))}
+                className="col-span-3"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="caeVencimiento">Vencimiento CAE</Label>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="afip-vencimiento" className="text-right">
+                Vencimiento
+              </Label>
               <Input
-                id="caeVencimiento"
+                id="afip-vencimiento"
                 type="date"
                 value={afipData.caeVencimiento}
-                onChange={(e) => setAfipData({...afipData, caeVencimiento: e.target.value})}
+                onChange={(e) => setAfipData(prev => ({...prev, caeVencimiento: e.target.value}))}
+                className="col-span-3"
               />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Checkbox id="afipCargada" defaultChecked />
-                <Label htmlFor="afipCargada">Marcar como registrada</Label>
-              </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAfipDialog(false)}>Cancelar</Button>
-            <Button onClick={handleUpdateAfipData}>Guardar datos</Button>
+            <Button onClick={() => setShowAfipDialog(false)} variant="outline">
+              Cancelar
+            </Button>
+            <Button onClick={() => console.log('Actualizar AFIP')}>
+              Actualizar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
