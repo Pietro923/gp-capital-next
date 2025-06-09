@@ -88,7 +88,7 @@ interface FacturaFormData {
 interface FacturaData {
   id: string;
   tipo_factura: string;
-  cliente_id: string;
+  cliente_id: string | Cliente;
   tipo_iva_id: string;
   forma_pago_id: string;
   total_neto: number;
@@ -108,6 +108,8 @@ interface FacturaData {
     dni: string;
     cuit: string;
     tipo_iva: { nombre: string };
+    tipo_cliente?: TipoCliente; // Añadir esto
+    empresa?: string; // Añadir esto
   };
   tipo_iva: { nombre: string };
   forma_pago: { nombre: string };
@@ -195,15 +197,24 @@ const Billing: React.FC = () => {
     setIsLoadingHistory(true);
     try {
       const { data, error: historyError } = await supabase
-        .from('facturacion')
-        .select(`
-          *,
-          cliente:cliente_id(nombre, apellido, direccion, dni, cuit, tipo_iva:tipo_iva_id(nombre)),
-          tipo_iva:tipo_iva_id(nombre),
-          forma_pago:forma_pago_id(nombre)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(20);
+  .from('facturacion')
+  .select(`
+    *,
+    cliente:cliente_id(
+      nombre, 
+      apellido, 
+      direccion, 
+      dni, 
+      cuit, 
+      tipo_cliente,
+      empresa,
+      tipo_iva:tipo_iva_id(nombre)
+    ),
+    tipo_iva:tipo_iva_id(nombre),
+    forma_pago:forma_pago_id(nombre)
+  `)
+  .order('created_at', { ascending: false })
+  .limit(20);
       
       if (historyError) throw historyError;
       if (data) setFacturas(data as FacturaData[]);
@@ -877,11 +888,15 @@ const Billing: React.FC = () => {
                             }
                           </TableCell>
                           <TableCell>
-                            {factura.cliente.apellido 
-                              ? `${factura.cliente.apellido}, ${factura.cliente.nombre}`
-                              : factura.cliente.nombre
-                            }
-                          </TableCell>
+  {(() => {
+    // Si es empresa o no tiene apellido
+    if (factura.cliente.tipo_cliente === 'EMPRESA' || !factura.cliente.apellido) {
+      return factura.cliente.empresa || factura.cliente.nombre;
+    }
+    // Si es persona física con apellido
+    return `${factura.cliente.apellido}, ${factura.cliente.nombre}`;
+  })()}
+</TableCell>
                           <TableCell className="text-right">${factura.total_factura.toFixed(2)}</TableCell>
                           <TableCell>
         <div className="flex items-center">
