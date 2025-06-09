@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/utils/supabase/client";
 import { User } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
+import { Download } from "lucide-react";
 
 // Tipos para los datos del informe
 interface InformeFinanciero {
@@ -451,6 +452,153 @@ export default function Dashboard() {
     </div>;
   }
 
+
+  // Función para exportar informe de Movimientos de Caja
+const exportarMovimientosCaja = async () => {
+  setLoading(true);
+  try {
+    // Obtener datos detallados
+    const { data: movimientos, error } = await supabase
+      .from('movimientos_caja')
+      .select('fecha_movimiento, tipo, monto')
+      .gte('fecha_movimiento', filtro.fechaInicio)
+      .lte('fecha_movimiento', filtro.fechaFin + ' 23:59:59')
+      .order('fecha_movimiento', { ascending: false });
+
+    if (error) throw error;
+
+    // Crear datos para el Excel
+    const datos = [
+      ["MOVIMIENTOS DE CAJA - GP CAPITAL", "", "", ""],
+      [`Período: ${filtro.fechaInicio} al ${filtro.fechaFin}`, "", "", ""],
+      ["", "", "", ""],
+      ["RESUMEN", "", "", ""],
+      ["Concepto", "Monto", "", ""],
+      ["Ingresos de Caja", informe.ingresosCaja, "", ""],
+      ["Egresos de Caja", informe.egresosCaja, "", ""],
+      ["Saldo Neto Caja", informe.saldoCaja, "", ""],
+      ["", "", "", ""],
+      ["DETALLE DE MOVIMIENTOS", "", "", ""],
+      ["Fecha", "Tipo", "Monto"],
+      ...movimientos.map(mov => [
+        new Date(mov.fecha_movimiento).toLocaleDateString(),
+        mov.tipo,
+        mov.monto
+      ])
+    ];
+
+    // Crear el libro de trabajo
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(datos);
+    
+    // Configurar el ancho de las columnas
+    ws['!cols'] = [
+      { wch: 15 }, { wch: 12 }, { wch: 30 }, { wch: 15 }
+    ];
+
+    // Agregar la hoja al libro
+    XLSX.utils.book_append_sheet(wb, ws, "Movimientos Caja");
+
+    // Generar el archivo Excel
+    //const fechaActual = new Date().toISOString().split('T')[0];
+    const nombreArchivo = `Movimientos_Caja_${filtro.fechaInicio}_${filtro.fechaFin}.xlsx`;
+    
+    XLSX.writeFile(wb, nombreArchivo);
+  } catch (error) {
+    console.error('Error exportando movimientos de caja:', error);
+  } finally {
+    setLoading(false);
+  }
+};
+
+// Función para exportar informe de Movimientos Bancarios
+const exportarMovimientosBanco = () => {
+  const datos = [
+    ["MOVIMIENTOS BANCARIOS - GP CAPITAL", "", "", ""],
+    [`Período: ${filtro.fechaInicio} al ${filtro.fechaFin}`, "", "", ""],
+    ["", "", "", ""],
+    ["Concepto", "Monto", "", ""],
+    ["Ingresos Bancarios", informe.ingresosBanco, "", ""],
+    ["Egresos Bancarios", informe.egresosBanco, "", ""],
+    ["Gastos Bancarios", informe.gastosBancarios, "", ""],
+    ["Saldo Neto Banco", informe.saldoBanco, "", ""],
+    ["", "", "", ""],
+    ["Detalle de Movimientos", "", "", ""],
+    ["Fecha", "Tipo", "Descripción", "Monto"]
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(datos);
+  ws['!cols'] = [
+    { wch: 20 }, { wch: 15 }, { wch: 25 }, { wch: 15 }
+  ];
+  XLSX.utils.book_append_sheet(wb, ws, "Movimientos Banco");
+  
+  //const fechaActual = new Date().toISOString().split('T')[0];
+  const nombreArchivo = `Movimientos_Banco_${filtro.fechaInicio}_${filtro.fechaFin}.xlsx`;
+  XLSX.writeFile(wb, nombreArchivo);
+};
+
+// Función para exportar informe de Facturación y Compras
+const exportarFacturacionCompras = () => {
+  const datos = [
+    ["FACTURACIÓN Y COMPRAS - GP CAPITAL", "", "", ""],
+    [`Período: ${filtro.fechaInicio} al ${filtro.fechaFin}`, "", "", ""],
+    ["", "", "", ""],
+    ["Concepto", "Monto", "", ""],
+    ["Total Facturado", informe.totalFacturado, "", ""],
+    ["Total Compras", informe.totalCompras, "", ""],
+    ["Diferencia", informe.totalFacturado - informe.totalCompras, "", ""],
+    ["", "", "", ""],
+    ["Detalle de Facturación", "", "", ""],
+    ["Fecha", "N° Factura", "Cliente", "Monto"],
+    ["", "", "", ""],
+    ["Detalle de Compras", "", "", ""],
+    ["Fecha", "N° Factura", "Proveedor", "Monto"]
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(datos);
+  ws['!cols'] = [
+    { wch: 15 }, { wch: 15 }, { wch: 25 }, { wch: 15 }
+  ];
+  XLSX.utils.book_append_sheet(wb, ws, "Facturación y Compras");
+  
+  //const fechaActual = new Date().toISOString().split('T')[0];
+  const nombreArchivo = `Facturacion_Compras_${filtro.fechaInicio}_${filtro.fechaFin}.xlsx`;
+  XLSX.writeFile(wb, nombreArchivo);
+};
+
+// Función para exportar informe de Gestión de Préstamos
+const exportarGestionPrestamos = () => {
+  const datos = [
+    ["GESTIÓN DE PRÉSTAMOS - GP CAPITAL", "", "", ""],
+    [`Período: ${filtro.fechaInicio} al ${filtro.fechaFin}`, "", "", ""],
+    ["", "", "", ""],
+    ["Concepto", "Monto", "", ""],
+    ["Préstamos Otorgados", informe.prestamosOtorgados, "", ""],
+    ["Cuotas Cobradas", informe.cuotasCobradas, "", ""],
+    ["Cuotas Pendientes", informe.cuotasPendientes, "", ""],
+    ["", "", "", ""],
+    ["Detalle de Préstamos", "", "", ""],
+    ["Fecha", "Cliente", "Monto Total", "Estado"],
+    ["", "", "", ""],
+    ["Detalle de Cuotas", "", "", ""],
+    ["Fecha Vencimiento", "Préstamo", "Cliente", "Monto", "Estado"]
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(datos);
+  ws['!cols'] = [
+    { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
+  ];
+  XLSX.utils.book_append_sheet(wb, ws, "Gestión Préstamos");
+  
+  //const fechaActual = new Date().toISOString().split('T')[0];
+  const nombreArchivo = `Gestion_Prestamos_${filtro.fechaInicio}_${filtro.fechaFin}.xlsx`;
+  XLSX.writeFile(wb, nombreArchivo);
+};
+
   return (
     <div className="min-h-screen bg-gray-100">
       <main className="w-full p-8">
@@ -501,18 +649,47 @@ export default function Dashboard() {
             
             <div className="flex gap-4">
               <button
-                onClick={generarInforme}
-                disabled={loading}
-                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Generando...' : 'Actualizar Informe'}
-              </button>
+  onClick={generarInforme}
+  disabled={loading}
+  className={`inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg transition font-medium
+    ${loading ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}
+    text-white shadow-md disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2`}
+>
+  {loading ? (
+    <>
+      <svg
+        className="animate-spin h-5 w-5 text-white"
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+      >
+        <circle
+          className="opacity-25"
+          cx="12"
+          cy="12"
+          r="10"
+          stroke="currentColor"
+          strokeWidth="4"
+        ></circle>
+        <path
+          className="opacity-75"
+          fill="currentColor"
+          d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 100 16v-4l-3 3 3 3v-4a8 8 0 01-8-8z"
+        ></path>
+      </svg>
+      Generando...
+    </>
+  ) : (
+    'Actualizar Informe'
+  )}
+</button>
               
               <button
                 onClick={exportarInforme}
-                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
+                className="inline-flex items-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-lg shadow-md transition hover:bg-green-700 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
               >
-                Exportar Informe
+                <Download className="h-5 w-5" />
+                <span className="font-medium">Exportar Informe</span>
               </button>
             </div>
           </div>
@@ -553,8 +730,18 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Movimientos de Caja */}
           <div className="bg-white p-6 rounded-lg shadow-md">
-            <h3 className="text-xl font-semibold text-gray-700 mb-4">Movimientos de Caja</h3>
-            <div className="space-y-3">
+          <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-semibold text-gray-700 mb-4">Movimientos de Caja</h3>
+          <button
+          onClick={exportarMovimientosCaja}
+          className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 shadow-sm"
+  title="Exportar a Excel"
+>
+  <Download className="h-4 w-4" />
+  Exportar
+</button>
+          </div>
+          <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-gray-600">Ingresos:</span>
                 <span className="font-semibold text-green-600">${informe.ingresosCaja.toLocaleString()}</span>
@@ -575,7 +762,17 @@ export default function Dashboard() {
 
           {/* Movimientos Bancarios */}
           <div className="bg-white p-6 rounded-lg shadow-md">
+            <div className="flex justify-between items-center mb-4">
             <h3 className="text-xl font-semibold text-gray-700 mb-4">Movimientos Bancarios</h3>
+            <button
+      onClick={exportarMovimientosBanco}
+      className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 shadow-sm"
+  title="Exportar a Excel"
+>
+  <Download className="h-4 w-4" />
+  Exportar
+</button>
+    </div>
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-gray-600">Ingresos:</span>
@@ -601,7 +798,17 @@ export default function Dashboard() {
 
           {/* Facturación y Compras */}
           <div className="bg-white p-6 rounded-lg shadow-md">
-            <h3 className="text-xl font-semibold text-gray-700 mb-4">Facturación y Compras</h3>
+            <div className="flex justify-between items-center mb-4">
+    <h3 className="text-xl font-semibold text-gray-700">Facturación y Compras</h3>
+    <button
+      onClick={exportarFacturacionCompras}
+      className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 shadow-sm"
+  title="Exportar a Excel"
+>
+  <Download className="h-4 w-4" />
+  Exportar
+</button>
+  </div>
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-gray-600">Total Facturado:</span>
@@ -623,7 +830,17 @@ export default function Dashboard() {
 
           {/* Préstamos */}
           <div className="bg-white p-6 rounded-lg shadow-md">
-            <h3 className="text-xl font-semibold text-gray-700 mb-4">Gestión de Préstamos</h3>
+            <div className="flex justify-between items-center mb-4">
+    <h3 className="text-xl font-semibold text-gray-700">Gestión de Préstamos</h3>
+    <button
+      onClick={exportarGestionPrestamos}
+      className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 shadow-sm"
+  title="Exportar a Excel"
+>
+  <Download className="h-4 w-4" />
+  Exportar
+</button>
+  </div>
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-gray-600">Préstamos Otorgados:</span>
