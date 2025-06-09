@@ -545,6 +545,27 @@ const Billing: React.FC = () => {
     return <span className="text-amber-600 flex items-center">Pendiente de registrar en AFIP</span>;
   };
 
+// el check de afip
+  const handleAfipCheckChange = async (facturaId: string, isChecked: boolean) => {
+  try {
+    const { error } = await supabase
+      .from('facturacion')
+      .update({ afip_cargada: isChecked })
+      .eq('id', facturaId);
+    
+    if (error) throw error;
+    
+    // Actualizar el estado local
+    setFacturas(prev => prev.map(f => 
+      f.id === facturaId ? { ...f, afip_cargada: isChecked } : f
+    ));
+    
+  } catch (error) {
+    console.error('Error actualizando estado AFIP:', error);
+    alert('Error al actualizar el estado AFIP');
+  }
+};
+
   return (
     <div className="container mx-auto p-4">
       <Tabs defaultValue="nueva" className="w-full">
@@ -572,10 +593,16 @@ const Billing: React.FC = () => {
                         <SelectValue placeholder="Seleccione tipo" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="A">Factura A</SelectItem>
-                        <SelectItem value="B">Factura B</SelectItem>
-                        <SelectItem value="C">Factura C</SelectItem>
-                      </SelectContent>
+  <SelectItem value="A">Factura A</SelectItem>
+  <SelectItem value="B">Factura B</SelectItem>
+  <SelectItem value="C">Factura C</SelectItem>
+  <SelectItem value="NCA">Nota de Crédito A</SelectItem>
+  <SelectItem value="NCB">Nota de Crédito B</SelectItem>
+  <SelectItem value="NCC">Nota de Crédito C</SelectItem>
+  <SelectItem value="NDA">Nota de Débito A</SelectItem>
+  <SelectItem value="NDB">Nota de Débito B</SelectItem>
+  <SelectItem value="NDC">Nota de Débito C</SelectItem>
+</SelectContent>
                     </Select>
                   </div>
                   
@@ -856,7 +883,18 @@ const Billing: React.FC = () => {
                             }
                           </TableCell>
                           <TableCell className="text-right">${factura.total_factura.toFixed(2)}</TableCell>
-                          <TableCell>{getEstadoFactura(factura)}</TableCell>
+                          <TableCell>
+        <div className="flex items-center">
+          <input
+            type="checkbox"
+            checked={factura.afip_cargada}
+            onChange={(e) => handleAfipCheckChange(factura.id, e.target.checked)}
+            className="mr-2 h-4 w-4"
+          />
+          {getEstadoFactura(factura)}
+        </div>
+      </TableCell>
+                          
                           <TableCell>
                             <div className="flex gap-1">
                               <Button
