@@ -600,7 +600,7 @@ const exportarGestionPrestamos = () => {
 };
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen ">
       <main className="w-full p-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-4">Dashboard GP Capital</h1>
