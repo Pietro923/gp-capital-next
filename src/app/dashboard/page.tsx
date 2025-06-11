@@ -812,19 +812,19 @@ const exportarFacturacionCompras = async () => {
       ["Fecha", "N° Factura", "Cliente", "Monto"]
     ];
 
-    // Agregar detalles de facturación
+    // Agregar detalles de facturación - CORREGIDO
     const detallesFacturacion = facturasDetalle?.map(factura => {
       // Formatear número de factura con punto de venta
       const numeroCompleto = factura.punto_venta 
         ? `${factura.punto_venta}-${String(factura.numero_factura).padStart(8, '0')}`
         : String(factura.numero_factura).padStart(8, '0');
 
-      // Formatear nombre del cliente
-const nombreCliente = factura.cliente?.map(c => 
-  c.tipo_cliente === 'EMPRESA'
-    ? c.empresa || c.nombre
-    : `${c.apellido || ''}, ${c.nombre || ''}`.trim()
-).join(', ') || 'Cliente no encontrado';
+      // Formatear nombre del cliente - CORREGIDO: cliente es un objeto, no un array
+      const nombreCliente = factura.cliente 
+        ? (factura.cliente.tipo_cliente === 'EMPRESA'
+            ? factura.cliente.empresa || factura.cliente.nombre
+            : `${factura.cliente.apellido || ''}, ${factura.cliente.nombre || ''}`.trim())
+        : 'Cliente no encontrado';
 
       return [
         new Date(factura.fecha_emision).toLocaleDateString('es-AR'),
@@ -841,17 +841,22 @@ const nombreCliente = factura.cliente?.map(c =>
       ["Fecha", "N° Factura", "Proveedor", "Monto"]
     ];
 
-    // Agregar detalles de compras
+    // Agregar detalles de compras - CORREGIDO
     const detallesCompras = comprasDetalle?.map(compra => {
       // Formatear número de factura con punto de venta
       const numeroCompleto = compra.punto_venta 
         ? `${compra.punto_venta}-${compra.numero_factura}`
         : compra.numero_factura;
 
+      // Formatear nombre del proveedor - CORREGIDO: proveedor es un objeto, no un array
+      const nombreProveedor = compra.proveedor 
+        ? compra.proveedor.nombre
+        : 'Proveedor no encontrado';
+
       return [
         new Date(compra.fecha_compra).toLocaleDateString('es-AR'),
         `${compra.tipo_factura}-${numeroCompleto}`,
-       compra.proveedor?.map(p => p.nombre).join(', ') || 'Proveedor no encontrado',
+        nombreProveedor,
         compra.total_factura
       ];
     }) || [];
@@ -909,7 +914,7 @@ const nombreCliente = factura.cliente?.map(c =>
     // Agregar la hoja al libro
     XLSX.utils.book_append_sheet(wb, ws, "Facturación y Compras");
 
-    // Crear hoja adicional solo con facturas para análisis
+    // Crear hoja adicional solo con facturas para análisis - CORREGIDO
     if (facturasDetalle && facturasDetalle.length > 0) {
       const facturasParaAnalisis = [
         ["ANÁLISIS DE FACTURACIÓN", "", "", ""],
@@ -918,11 +923,11 @@ const nombreCliente = factura.cliente?.map(c =>
           new Date(f.fecha_emision).toLocaleDateString('es-AR'),
           f.tipo_factura,
           f.punto_venta ? `${f.punto_venta}-${String(f.numero_factura).padStart(8, '0')}` : String(f.numero_factura),
-          f.cliente?.map(c => 
-  c.tipo_cliente === 'EMPRESA' 
-    ? c.empresa 
-    : `${c.apellido}, ${c.nombre}`
-).join(', ') || 'Cliente no encontrado',
+          f.cliente 
+            ? (f.cliente.tipo_cliente === 'EMPRESA' 
+                ? f.cliente.empresa 
+                : `${f.cliente.apellido}, ${f.cliente.nombre}`)
+            : 'Cliente no encontrado',
           f.total_factura
         ])
       ];
@@ -932,7 +937,7 @@ const nombreCliente = factura.cliente?.map(c =>
       XLSX.utils.book_append_sheet(wb, wsFacturas, "Solo Facturas");
     }
 
-    // Crear hoja adicional solo con compras para análisis
+    // Crear hoja adicional solo con compras para análisis - CORREGIDO
     if (comprasDetalle && comprasDetalle.length > 0) {
       const comprasParaAnalisis = [
         ["ANÁLISIS DE COMPRAS", "", "", ""],
@@ -941,7 +946,9 @@ const nombreCliente = factura.cliente?.map(c =>
           new Date(c.fecha_compra).toLocaleDateString('es-AR'),
           c.tipo_factura,
           c.punto_venta ? `${c.punto_venta}-${c.numero_factura}` : c.numero_factura,
-         c.proveedor?.map(p => p.nombre).join(', ') || 'Proveedor no encontrado',
+          c.proveedor 
+            ? c.proveedor.nombre
+            : 'Proveedor no encontrado',
           c.total_factura
         ])
       ];
@@ -954,7 +961,6 @@ const nombreCliente = factura.cliente?.map(c =>
     // Generar el archivo Excel
     const nombreArchivo = `Facturacion_Compras_Detallado_${filtro.fechaInicio}_${filtro.fechaFin}.xlsx`;
     XLSX.writeFile(wb, nombreArchivo);
-
     console.log(`✅ Exportado: ${facturasDetalle?.length || 0} facturas y ${comprasDetalle?.length || 0} compras`);
     
   } catch (error) {

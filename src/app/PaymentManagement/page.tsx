@@ -127,7 +127,7 @@ const PaymentManagement: React.FC = () => {
           direccion,
           telefono,
           correo,
-          tipos_iva:tipos_iva!inner(nombre)
+          tipos_iva(nombre)
         `)
         .order('nombre');
 
@@ -135,7 +135,7 @@ const PaymentManagement: React.FC = () => {
 
       const proveedoresFormatted = data?.map(p => ({
         ...p,
-       tipo_iva: p.tipos_iva?.map(t => t.nombre).join(', ')
+        tipo_iva: p.tipos_iva?.nombre
       })) || [];
 
       setProveedores(proveedoresFormatted);
@@ -183,18 +183,18 @@ const PaymentManagement: React.FC = () => {
       if (error) throw error;
 
       const ordenesFormatted = data?.map(orden => ({
-  id: orden.id,
-  numero_orden: orden.numero_orden,
-  proveedor_nombre: orden.proveedores?.map(p => p.nombre).join(', ') || '',
-  proveedor_cuit: orden.proveedores?.map(p => p.cuit).join(', ') || '',
-  fecha_emision: orden.fecha_emision,
-  monto_total: orden.monto_total,
-  estado: orden.estado,
-  forma_pago_nombre: orden.formas_pago?.map(f => f.nombre).join(', ') || '',
-  numero_operacion: orden.numero_operacion,
-  fecha_pago: orden.fecha_pago,
-  observaciones: orden.observaciones
-})) || [];
+        id: orden.id,
+        numero_orden: orden.numero_orden,
+        proveedor_nombre: orden.proveedores?.nombre || '',
+        proveedor_cuit: orden.proveedores?.cuit || '',
+        fecha_emision: orden.fecha_emision,
+        monto_total: orden.monto_total,
+        estado: orden.estado,
+        forma_pago_nombre: orden.formas_pago?.nombre || '',
+        numero_operacion: orden.numero_operacion,
+        fecha_pago: orden.fecha_pago,
+        observaciones: orden.observaciones
+      })) || [];
 
       setOrdenesPago(ordenesFormatted);
     } catch (error) {
@@ -250,11 +250,11 @@ const PaymentManagement: React.FC = () => {
 
       if (error) throw error;
 
-     const comprasFormatted = data?.map(compra => ({
-  ...compra,
-  saldo_pendiente: compra.total_factura - compra.monto_pagado,
-  forma_pago: compra.formas_pago?.map(f => f.nombre).join(', ') || ''
-})) || [];
+      const comprasFormatted = data?.map(compra => ({
+        ...compra,
+        saldo_pendiente: compra.total_factura - compra.monto_pagado,
+        forma_pago: compra.formas_pago?.nombre
+      })) || [];
 
       setComprasProveedor(comprasFormatted);
     } catch (error) {
@@ -428,16 +428,14 @@ const PaymentManagement: React.FC = () => {
       }
 
       // Registrar movimiento de egreso en caja
-      const proveedorNombre = ordenData.proveedores?.map(p => p.nombre).join(', ') || 'Proveedor desconocido';
-
-const { error: movimientoError } = await supabase
-  .from('movimientos_caja')
-  .insert({
-    tipo: 'EGRESO',
-    concepto: `Pago a proveedor ${proveedorNombre} - Orden ${ordenData.numero_orden}`,
-    monto: ordenData.monto_total,
-    fecha_movimiento: confirmForm.fechaPago
-  });
+      const { error: movimientoError } = await supabase
+        .from('movimientos_caja')
+        .insert({
+          tipo: 'EGRESO',
+          concepto: `Pago a proveedor ${ordenData.proveedores?.nombre} - Orden ${ordenData.numero_orden}`,
+          monto: ordenData.monto_total,
+          fecha_movimiento: confirmForm.fechaPago
+        });
 
       if (movimientoError) {
         console.error('Error creating movimento caja:', movimientoError);
