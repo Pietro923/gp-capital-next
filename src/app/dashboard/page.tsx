@@ -113,8 +113,8 @@ export default function Dashboard() {
     const { data, error } = await supabase
       .from('facturacion')
       .select('total_factura')
-      .gte('fecha_emision', filtro.fechaInicio)
-      .lte('fecha_emision', filtro.fechaFin);
+      .gte('fecha_factura', filtro.fechaInicio)  // antes era fecha_emision
+      .lte('fecha_factura', filtro.fechaFin)     // antes era fecha_emision
     if (error) throw error;
     const total = data.reduce((acc, factura) => acc + Number(factura.total_factura), 0);
     return { total };
@@ -179,6 +179,15 @@ export default function Dashboard() {
 
   // Función principal para generar el informe completo - CORREGIDA con useCallback
   const generarInforme = useCallback(async () => {
+
+    // Validar que las fechas estén completas y sean válidas
+      if (!filtro.fechaInicio || !filtro.fechaFin || 
+          filtro.fechaInicio.length < 10 || filtro.fechaFin.length < 10 ||
+          isNaN(Date.parse(filtro.fechaInicio)) || isNaN(Date.parse(filtro.fechaFin))) {
+        console.log('Fechas incompletas o inválidas, esperando...');
+        return;
+      }
+
     setLoading(true);
     try {
       const [
@@ -422,7 +431,7 @@ export default function Dashboard() {
       const { data: facturasDetalle, error: facturaError } = await supabase
         .from('facturacion')
         .select(`
-          fecha_emision,
+          fecha_factura,  
           numero_factura,
           punto_venta,
           tipo_factura,
@@ -435,9 +444,9 @@ export default function Dashboard() {
           )
         `)
         .eq('eliminado', false)
-        .gte('fecha_emision', filtro.fechaInicio)
-        .lte('fecha_emision', filtro.fechaFin)
-        .order('fecha_emision', { ascending: false });
+        .gte('fecha_factura', filtro.fechaInicio)  // Cambio aquí (era fecha_emision)
+  .lte('fecha_factura', filtro.fechaFin)     // Cambio aquí (era fecha_emision)
+  .order('fecha_factura', { ascending: false });  // Cambio aquí (era fecha_emision)
 
       if (facturaError) throw facturaError;
 
@@ -489,7 +498,7 @@ export default function Dashboard() {
           : 'Cliente no encontrado';
 
         return [
-          new Date(factura.fecha_emision).toLocaleDateString('es-AR'),
+          new Date(factura.fecha_factura).toLocaleDateString('es-AR'),  // Cambio aquí
           `${factura.tipo_factura}-${numeroCompleto}`,
           nombreCliente,
           factura.total_factura
@@ -573,7 +582,7 @@ export default function Dashboard() {
           ["ANÁLISIS DE FACTURACIÓN", "", "", ""],
           ["Fecha", "Tipo", "N° Factura", "Cliente", "Monto"],
           ...facturasDetalle.map(f => [
-            new Date(f.fecha_emision).toLocaleDateString('es-AR'),
+            new Date(f.fecha_factura).toLocaleDateString('es-AR'),  // Cambio aquí
             f.tipo_factura,
             f.punto_venta ? `${f.punto_venta}-${String(f.numero_factura).padStart(8, '0')}` : String(f.numero_factura),
             f.cliente 
