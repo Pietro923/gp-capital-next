@@ -402,11 +402,11 @@ export default function Dashboard() {
       const cell = ws[cell_address];
       if (typeof cell.v === 'string' && 
           (cell.v.includes('CAPITAL') || 
-           cell.v.includes('MOVIMIENTOS DE CAJA') || 
-           cell.v.includes('MOVIMIENTOS BANCARIOS') ||
-           cell.v.includes('FACTURACIÓN Y COMPRAS') ||
-           cell.v.includes('GESTIÓN DE PRÉSTAMOS') ||
-           cell.v.includes('ANÁLISIS DE RENTABILIDAD'))) {
+          cell.v.includes('MOVIMIENTOS DE CAJA') || 
+          cell.v.includes('MOVIMIENTOS BANCARIOS') ||
+          cell.v.includes('FACTURACIÓN Y COMPRAS') ||
+          cell.v.includes('GESTIÓN DE PRÉSTAMOS') ||
+          cell.v.includes('ANÁLISIS DE RENTABILIDAD'))) {
         if (!cell.s) cell.s = {};
         cell.s.font = { bold: true };
       }
@@ -457,147 +457,841 @@ export default function Dashboard() {
 const exportarMovimientosCaja = async () => {
   setLoading(true);
   try {
-    // Obtener datos detallados
+    // Obtener datos detallados de movimientos de caja
     const { data: movimientos, error } = await supabase
       .from('movimientos_caja')
-      .select('fecha_movimiento, tipo, monto')
+      .select('fecha_movimiento, tipo, concepto, monto, created_at')
       .gte('fecha_movimiento', filtro.fechaInicio)
       .lte('fecha_movimiento', filtro.fechaFin + ' 23:59:59')
       .order('fecha_movimiento', { ascending: false });
 
     if (error) throw error;
 
+    // Calcular totales
+    const totales = movimientos?.reduce((acc, mov) => {
+      if (mov.tipo === 'INGRESO') {
+        acc.ingresos += Number(mov.monto);
+      } else {
+        acc.egresos += Number(mov.monto);
+      }
+      return acc;
+    }, { ingresos: 0, egresos: 0 }) || { ingresos: 0, egresos: 0 };
+
     // Crear datos para el Excel
-    const datos = [
-      ["MOVIMIENTOS DE CAJA - GP CAPITAL", "", "", ""],
-      [`Período: ${filtro.fechaInicio} al ${filtro.fechaFin}`, "", "", ""],
-      ["", "", "", ""],
-      ["RESUMEN", "", "", ""],
-      ["Concepto", "Monto", "", ""],
-      ["Ingresos de Caja", informe.ingresosCaja, "", ""],
-      ["Egresos de Caja", informe.egresosCaja, "", ""],
-      ["Saldo Neto Caja", informe.saldoCaja, "", ""],
-      ["", "", "", ""],
-      ["DETALLE DE MOVIMIENTOS", "", "", ""],
-      ["Fecha", "Tipo", "Monto"],
-      ...movimientos.map(mov => [
-        new Date(mov.fecha_movimiento).toLocaleDateString(),
-        mov.tipo,
-        mov.monto
-      ])
+    const datosBase = [
+      ["MOVIMIENTOS DE CAJA - GP CAPITAL", "", "", "", ""],
+      [`Período: ${filtro.fechaInicio} al ${filtro.fechaFin}`, "", "", "", ""],
+      ["", "", "", "", ""],
+      ["RESUMEN", "", "", "", ""],
+      ["Concepto", "Monto", "", "", ""],
+      ["Ingresos de Caja", totales.ingresos, "", "", ""],
+      ["Egresos de Caja", totales.egresos, "", "", ""],
+      ["Saldo Neto Caja", totales.ingresos - totales.egresos, "", "", ""],
+      ["", "", "", "", ""],
+      ["DETALLE DE MOVIMIENTOS", "", "", "", ""],
+      ["Fecha", "Tipo", "Concepto", "Monto", "Fecha Registro"]
+    ];
+
+    // Agregar detalles de movimientos
+    const detallesMovimientos = movimientos?.map(mov => [
+      new Date(mov.fecha_movimiento).toLocaleDateString('es-AR'),
+      mov.tipo,
+      mov.concepto || 'Sin concepto',
+      mov.monto,
+      new Date(mov.created_at).toLocaleDateString('es-AR')
+    ]) || [];
+
+    // Agregar estadísticas adicionales
+    const estadisticas = [
+      ["", "", "", "", ""],
+      ["ESTADÍSTICAS", "", "", "", ""],
+      ["Total de Movimientos", movimientos?.length || 0, "", "", ""],
+      ["Movimientos de Ingreso", movimientos?.filter(m => m.tipo === 'INGRESO').length || 0, "", "", ""],
+      ["Movimientos de Egreso", movimientos?.filter(m => m.tipo === 'EGRESO').length || 0, "", "", ""],
+      ["Promedio Ingresos", totales.ingresos > 0 ? (totales.ingresos / (movimientos?.filter(m => m.tipo === 'INGRESO').length || 1)).toFixed(2) : 0, "", "", ""],
+      ["Promedio Egresos", totales.egresos > 0 ? (totales.egresos / (movimientos?.filter(m => m.tipo === 'EGRESO').length || 1)).toFixed(2) : 0, "", "", ""]
+    ];
+
+    // Combinar todos los datos
+    const datosCompletos = [
+      ...datosBase,
+      ...detallesMovimientos,
+      ...estadisticas
     ];
 
     // Crear el libro de trabajo
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(datos);
+    const ws = XLSX.utils.aoa_to_sheet(datosCompletos);
     
     // Configurar el ancho de las columnas
     ws['!cols'] = [
-      { wch: 15 }, { wch: 12 }, { wch: 30 }, { wch: 15 }
+      { wch: 15 }, // Fecha
+      { wch: 12 }, // Tipo
+      { wch: 40 }, // Concepto
+      { wch: 15 }, // Monto
+      { wch: 15 }  // Fecha Registro
     ];
+
+    // Formatear celdas importantes
+    if (ws['!ref']) {
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cell_address = XLSX.utils.encode_cell({c: C, r: R});
+          if (!ws[cell_address]) continue;
+          
+          const cell = ws[cell_address];
+          if (typeof cell.v === 'string' && 
+              (cell.v.includes('CAPITAL') || cell.v.includes('RESUMEN') || 
+               cell.v.includes('DETALLE') || cell.v.includes('ESTADÍSTICAS'))) {
+            if (!cell.s) cell.s = {};
+            cell.s.font = { bold: true };
+          }
+          
+          if (typeof cell.v === 'number' && cell.v > 100) {
+            if (!cell.s) cell.s = {};
+            cell.s.numFmt = '#,##0.00';
+          }
+        }
+      }
+    }
 
     // Agregar la hoja al libro
     XLSX.utils.book_append_sheet(wb, ws, "Movimientos Caja");
 
+    // Crear hoja adicional solo con ingresos
+    if (movimientos && movimientos.length > 0) {
+      const ingresos = movimientos.filter(m => m.tipo === 'INGRESO');
+      if (ingresos.length > 0) {
+        const ingresosData = [
+          ["SOLO INGRESOS DE CAJA", "", "", ""],
+          ["Fecha", "Concepto", "Monto", "Fecha Registro"],
+          ...ingresos.map(ing => [
+            new Date(ing.fecha_movimiento).toLocaleDateString('es-AR'),
+            ing.concepto,
+            ing.monto,
+            new Date(ing.created_at).toLocaleDateString('es-AR')
+          ])
+        ];
+        
+        const wsIngresos = XLSX.utils.aoa_to_sheet(ingresosData);
+        wsIngresos['!cols'] = [{ wch: 15 }, { wch: 40 }, { wch: 15 }, { wch: 15 }];
+        XLSX.utils.book_append_sheet(wb, wsIngresos, "Solo Ingresos");
+      }
+
+      // Crear hoja adicional solo con egresos
+      const egresos = movimientos.filter(m => m.tipo === 'EGRESO');
+      if (egresos.length > 0) {
+        const egresosData = [
+          ["SOLO EGRESOS DE CAJA", "", "", ""],
+          ["Fecha", "Concepto", "Monto", "Fecha Registro"],
+          ...egresos.map(egr => [
+            new Date(egr.fecha_movimiento).toLocaleDateString('es-AR'),
+            egr.concepto,
+            egr.monto,
+            new Date(egr.created_at).toLocaleDateString('es-AR')
+          ])
+        ];
+        
+        const wsEgresos = XLSX.utils.aoa_to_sheet(egresosData);
+        wsEgresos['!cols'] = [{ wch: 15 }, { wch: 40 }, { wch: 15 }, { wch: 15 }];
+        XLSX.utils.book_append_sheet(wb, wsEgresos, "Solo Egresos");
+      }
+    }
+
     // Generar el archivo Excel
-    //const fechaActual = new Date().toISOString().split('T')[0];
-    const nombreArchivo = `Movimientos_Caja_${filtro.fechaInicio}_${filtro.fechaFin}.xlsx`;
-    
+    const nombreArchivo = `Movimientos_Caja_Detallado_${filtro.fechaInicio}_${filtro.fechaFin}.xlsx`;
     XLSX.writeFile(wb, nombreArchivo);
+
+    console.log(`✅ Exportado: ${movimientos?.length || 0} movimientos de caja`);
+    
   } catch (error) {
     console.error('Error exportando movimientos de caja:', error);
+    alert('Error al exportar movimientos de caja');
   } finally {
     setLoading(false);
   }
 };
 
-// Función para exportar informe de Movimientos Bancarios
-const exportarMovimientosBanco = () => {
-  const datos = [
-    ["MOVIMIENTOS BANCARIOS - GP CAPITAL", "", "", ""],
-    [`Período: ${filtro.fechaInicio} al ${filtro.fechaFin}`, "", "", ""],
-    ["", "", "", ""],
-    ["Concepto", "Monto", "", ""],
-    ["Ingresos Bancarios", informe.ingresosBanco, "", ""],
-    ["Egresos Bancarios", informe.egresosBanco, "", ""],
-    ["Gastos Bancarios", informe.gastosBancarios, "", ""],
-    ["Saldo Neto Banco", informe.saldoBanco, "", ""],
-    ["", "", "", ""],
-    ["Detalle de Movimientos", "", "", ""],
-    ["Fecha", "Tipo", "Descripción", "Monto"]
-  ];
+// Función para exportar informe DETALLADO de Movimientos Bancarios - ACTUALIZADA
+const exportarMovimientosBanco = async () => {
+  setLoading(true);
+  try {
+    // Obtener datos detallados de movimientos bancarios
+    const { data: movimientosBanco, error } = await supabase
+      .from('movimientos_banco')
+      .select('fecha_movimiento, tipo, concepto, monto, numero_operacion, detalle_gastos, created_at')
+      .gte('fecha_movimiento', filtro.fechaInicio)
+      .lte('fecha_movimiento', filtro.fechaFin + ' 23:59:59')
+      .order('fecha_movimiento', { ascending: false });
 
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(datos);
-  ws['!cols'] = [
-    { wch: 20 }, { wch: 15 }, { wch: 25 }, { wch: 15 }
-  ];
-  XLSX.utils.book_append_sheet(wb, ws, "Movimientos Banco");
-  
-  //const fechaActual = new Date().toISOString().split('T')[0];
-  const nombreArchivo = `Movimientos_Banco_${filtro.fechaInicio}_${filtro.fechaFin}.xlsx`;
-  XLSX.writeFile(wb, nombreArchivo);
+    if (error) throw error;
+
+    // Calcular totales
+    const totales = movimientosBanco?.reduce((acc, mov) => {
+      switch (mov.tipo) {
+        case 'INGRESO':
+          acc.ingresos += Number(mov.monto);
+          break;
+        case 'EGRESO':
+          acc.egresos += Number(mov.monto);
+          break;
+        case 'GASTO_BANCARIO':
+          acc.gastos += Number(mov.monto);
+          break;
+      }
+      return acc;
+    }, { ingresos: 0, egresos: 0, gastos: 0 }) || { ingresos: 0, egresos: 0, gastos: 0 };
+
+    // Crear datos base
+    const datosBase = [
+      ["MOVIMIENTOS BANCARIOS - GP CAPITAL", "", "", "", "", ""],
+      [`Período: ${filtro.fechaInicio} al ${filtro.fechaFin}`, "", "", "", "", ""],
+      ["", "", "", "", "", ""],
+      ["RESUMEN", "", "", "", "", ""],
+      ["Concepto", "Monto", "", "", "", ""],
+      ["Ingresos Bancarios", totales.ingresos, "", "", "", ""],
+      ["Egresos Bancarios", totales.egresos, "", "", "", ""],
+      ["Gastos Bancarios", totales.gastos, "", "", "", ""],
+      ["Saldo Neto Banco", totales.ingresos - totales.egresos - totales.gastos, "", "", "", ""],
+      ["", "", "", "", "", ""],
+      ["DETALLE DE MOVIMIENTOS", "", "", "", "", ""],
+      ["Fecha", "Tipo", "Concepto", "Monto", "N° Operación", "Detalle Gastos"]
+    ];
+
+    // Agregar detalles de movimientos bancarios
+    const detallesMovimientos = movimientosBanco?.map(mov => [
+      new Date(mov.fecha_movimiento).toLocaleDateString('es-AR'),
+      mov.tipo === 'GASTO_BANCARIO' ? 'GASTO BANCARIO' : mov.tipo,
+      mov.concepto || 'Sin concepto',
+      mov.monto,
+      mov.numero_operacion || '-',
+      mov.detalle_gastos || '-'
+    ]) || [];
+
+    // Agregar estadísticas
+    const estadisticas = [
+      ["", "", "", "", "", ""],
+      ["ESTADÍSTICAS", "", "", "", "", ""],
+      ["Total de Movimientos", movimientosBanco?.length || 0, "", "", "", ""],
+      ["Ingresos Bancarios", movimientosBanco?.filter(m => m.tipo === 'INGRESO').length || 0, "", "", "", ""],
+      ["Egresos Bancarios", movimientosBanco?.filter(m => m.tipo === 'EGRESO').length || 0, "", "", "", ""],
+      ["Gastos Bancarios", movimientosBanco?.filter(m => m.tipo === 'GASTO_BANCARIO').length || 0, "", "", "", ""],
+      ["Promedio Ingresos", totales.ingresos > 0 ? (totales.ingresos / (movimientosBanco?.filter(m => m.tipo === 'INGRESO').length || 1)).toFixed(2) : 0, "", "", "", ""]
+    ];
+
+    // Combinar datos
+    const datosCompletos = [
+      ...datosBase,
+      ...detallesMovimientos,
+      ...estadisticas
+    ];
+
+    // Crear libro de trabajo
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(datosCompletos);
+    ws['!cols'] = [
+      { wch: 15 }, { wch: 15 }, { wch: 35 }, { wch: 15 }, { wch: 20 }, { wch: 30 }
+    ];
+
+    // Formatear
+    if (ws['!ref']) {
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cell_address = XLSX.utils.encode_cell({c: C, r: R});
+          if (!ws[cell_address]) continue;
+          
+          const cell = ws[cell_address];
+          if (typeof cell.v === 'string' && 
+              (cell.v.includes('CAPITAL') || cell.v.includes('RESUMEN') || 
+               cell.v.includes('DETALLE') || cell.v.includes('ESTADÍSTICAS'))) {
+            if (!cell.s) cell.s = {};
+            cell.s.font = { bold: true };
+          }
+        }
+      }
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, "Movimientos Banco");
+
+    // Crear hojas adicionales por tipo
+    ['INGRESO', 'EGRESO', 'GASTO_BANCARIO'].forEach(tipo => {
+      const movimientosTipo = movimientosBanco?.filter(m => m.tipo === tipo);
+      if (movimientosTipo && movimientosTipo.length > 0) {
+        const tipoData = [
+          [`${tipo} BANCARIO`, "", "", "", ""],
+          ["Fecha", "Concepto", "Monto", "N° Operación", "Detalle"],
+          ...movimientosTipo.map(mov => [
+            new Date(mov.fecha_movimiento).toLocaleDateString('es-AR'),
+            mov.concepto,
+            mov.monto,
+            mov.numero_operacion || '-',
+            mov.detalle_gastos || '-'
+          ])
+        ];
+        
+        const wsTipo = XLSX.utils.aoa_to_sheet(tipoData);
+        wsTipo['!cols'] = [{ wch: 15 }, { wch: 35 }, { wch: 15 }, { wch: 20 }, { wch: 30 }];
+        XLSX.utils.book_append_sheet(wb, wsTipo, tipo === 'GASTO_BANCARIO' ? 'Gastos' : tipo.toLowerCase());
+      }
+    });
+
+    const nombreArchivo = `Movimientos_Banco_Detallado_${filtro.fechaInicio}_${filtro.fechaFin}.xlsx`;
+    XLSX.writeFile(wb, nombreArchivo);
+
+    console.log(`✅ Exportado: ${movimientosBanco?.length || 0} movimientos bancarios`);
+    
+  } catch (error) {
+    console.error('Error exportando movimientos bancarios:', error);
+    alert('Error al exportar movimientos bancarios');
+  } finally {
+    setLoading(false);
+  }
 };
 
-// Función para exportar informe de Facturación y Compras
-const exportarFacturacionCompras = () => {
-  const datos = [
-    ["FACTURACIÓN Y COMPRAS - GP CAPITAL", "", "", ""],
-    [`Período: ${filtro.fechaInicio} al ${filtro.fechaFin}`, "", "", ""],
-    ["", "", "", ""],
-    ["Concepto", "Monto", "", ""],
-    ["Total Facturado", informe.totalFacturado, "", ""],
-    ["Total Compras", informe.totalCompras, "", ""],
-    ["Diferencia", informe.totalFacturado - informe.totalCompras, "", ""],
-    ["", "", "", ""],
-    ["Detalle de Facturación", "", "", ""],
-    ["Fecha", "N° Factura", "Cliente", "Monto"],
-    ["", "", "", ""],
-    ["Detalle de Compras", "", "", ""],
-    ["Fecha", "N° Factura", "Proveedor", "Monto"]
-  ];
+// Función para exportar informe DETALLADO de Facturación y Compras - CORREGIDA
+const exportarFacturacionCompras = async () => {
+  setLoading(true);
+  try {
+    // Obtener datos detallados de facturación
+    const { data: facturasDetalle, error: facturaError } = await supabase
+      .from('facturacion')
+      .select(`
+        fecha_emision,
+        numero_factura,
+        punto_venta,
+        tipo_factura,
+        total_factura,
+        cliente:cliente_id(
+          nombre,
+          apellido,
+          tipo_cliente,
+          empresa
+        )
+      `)
+      .eq('eliminado', false) // Solo facturas no eliminadas
+      .gte('fecha_emision', filtro.fechaInicio)
+      .lte('fecha_emision', filtro.fechaFin)
+      .order('fecha_emision', { ascending: false });
 
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(datos);
-  ws['!cols'] = [
-    { wch: 15 }, { wch: 15 }, { wch: 25 }, { wch: 15 }
-  ];
-  XLSX.utils.book_append_sheet(wb, ws, "Facturación y Compras");
-  
-  //const fechaActual = new Date().toISOString().split('T')[0];
-  const nombreArchivo = `Facturacion_Compras_${filtro.fechaInicio}_${filtro.fechaFin}.xlsx`;
-  XLSX.writeFile(wb, nombreArchivo);
+    if (facturaError) throw facturaError;
+
+    // Obtener datos detallados de compras
+    const { data: comprasDetalle, error: compraError } = await supabase
+      .from('compras')
+      .select(`
+        fecha_compra,
+        numero_factura,
+        punto_venta,
+        tipo_factura,
+        total_factura,
+        proveedor:proveedor_id(
+          nombre,
+          cuit
+        )
+      `)
+      .gte('fecha_compra', filtro.fechaInicio)
+      .lte('fecha_compra', filtro.fechaFin)
+      .order('fecha_compra', { ascending: false });
+
+    if (compraError) throw compraError;
+
+    // Crear datos base del informe
+    const datosBase = [
+      ["FACTURACIÓN Y COMPRAS - GP CAPITAL", "", "", ""],
+      [`Período: ${filtro.fechaInicio} al ${filtro.fechaFin}`, "", "", ""],
+      ["", "", "", ""],
+      ["RESUMEN", "", "", ""],
+      ["Concepto", "Monto", "", ""],
+      ["Total Facturado", informe.totalFacturado, "", ""],
+      ["Total Compras", informe.totalCompras, "", ""],
+      ["Diferencia", informe.totalFacturado - informe.totalCompras, "", ""],
+      ["", "", "", ""],
+      ["DETALLE DE FACTURACIÓN", "", "", ""],
+      ["Fecha", "N° Factura", "Cliente", "Monto"]
+    ];
+
+    // Agregar detalles de facturación
+    const detallesFacturacion = facturasDetalle?.map(factura => {
+      // Formatear número de factura con punto de venta
+      const numeroCompleto = factura.punto_venta 
+        ? `${factura.punto_venta}-${String(factura.numero_factura).padStart(8, '0')}`
+        : String(factura.numero_factura).padStart(8, '0');
+
+      // Formatear nombre del cliente
+const nombreCliente = factura.cliente?.map(c => 
+  c.tipo_cliente === 'EMPRESA'
+    ? c.empresa || c.nombre
+    : `${c.apellido || ''}, ${c.nombre || ''}`.trim()
+).join(', ') || 'Cliente no encontrado';
+
+      return [
+        new Date(factura.fecha_emision).toLocaleDateString('es-AR'),
+        `${factura.tipo_factura}-${numeroCompleto}`,
+        nombreCliente,
+        factura.total_factura
+      ];
+    }) || [];
+
+    // Separador entre facturas y compras
+    const separador = [
+      ["", "", "", ""],
+      ["DETALLE DE COMPRAS", "", "", ""],
+      ["Fecha", "N° Factura", "Proveedor", "Monto"]
+    ];
+
+    // Agregar detalles de compras
+    const detallesCompras = comprasDetalle?.map(compra => {
+      // Formatear número de factura con punto de venta
+      const numeroCompleto = compra.punto_venta 
+        ? `${compra.punto_venta}-${compra.numero_factura}`
+        : compra.numero_factura;
+
+      return [
+        new Date(compra.fecha_compra).toLocaleDateString('es-AR'),
+        `${compra.tipo_factura}-${numeroCompleto}`,
+       compra.proveedor?.map(p => p.nombre).join(', ') || 'Proveedor no encontrado',
+        compra.total_factura
+      ];
+    }) || [];
+
+    // Combinar todos los datos
+    const datosCompletos = [
+      ...datosBase,
+      ...detallesFacturacion,
+      ...separador,
+      ...detallesCompras
+    ];
+
+    // Crear el libro de trabajo
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(datosCompletos);
+
+    // Configurar el ancho de las columnas
+    ws['!cols'] = [
+      { wch: 15 }, // Fecha
+      { wch: 20 }, // N° Factura
+      { wch: 30 }, // Cliente/Proveedor
+      { wch: 15 }  // Monto
+    ];
+
+    // Formatear celdas importantes
+    if (ws['!ref']) {
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cell_address = XLSX.utils.encode_cell({c: C, r: R});
+          if (!ws[cell_address]) continue;
+          
+          const cell = ws[cell_address];
+          
+          // Formatear títulos principales
+          if (typeof cell.v === 'string' && 
+              (cell.v.includes('CAPITAL') || 
+              cell.v.includes('DETALLE DE FACTURACIÓN') ||
+              cell.v.includes('DETALLE DE COMPRAS') ||
+              cell.v.includes('RESUMEN'))) {
+            if (!cell.s) cell.s = {};
+            cell.s.font = { bold: true };
+          }
+          
+          // Formatear montos
+          if (typeof cell.v === 'number' && cell.v > 1000) {
+            if (!cell.s) cell.s = {};
+            cell.s.numFmt = '#,##0.00';
+          }
+        }
+      }
+    }
+
+    // Agregar la hoja al libro
+    XLSX.utils.book_append_sheet(wb, ws, "Facturación y Compras");
+
+    // Crear hoja adicional solo con facturas para análisis
+    if (facturasDetalle && facturasDetalle.length > 0) {
+      const facturasParaAnalisis = [
+        ["ANÁLISIS DE FACTURACIÓN", "", "", ""],
+        ["Fecha", "Tipo", "N° Factura", "Cliente", "Monto"],
+        ...facturasDetalle.map(f => [
+          new Date(f.fecha_emision).toLocaleDateString('es-AR'),
+          f.tipo_factura,
+          f.punto_venta ? `${f.punto_venta}-${String(f.numero_factura).padStart(8, '0')}` : String(f.numero_factura),
+          f.cliente?.map(c => 
+  c.tipo_cliente === 'EMPRESA' 
+    ? c.empresa 
+    : `${c.apellido}, ${c.nombre}`
+).join(', ') || 'Cliente no encontrado',
+          f.total_factura
+        ])
+      ];
+      
+      const wsFacturas = XLSX.utils.aoa_to_sheet(facturasParaAnalisis);
+      wsFacturas['!cols'] = [{ wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 25 }, { wch: 15 }];
+      XLSX.utils.book_append_sheet(wb, wsFacturas, "Solo Facturas");
+    }
+
+    // Crear hoja adicional solo con compras para análisis
+    if (comprasDetalle && comprasDetalle.length > 0) {
+      const comprasParaAnalisis = [
+        ["ANÁLISIS DE COMPRAS", "", "", ""],
+        ["Fecha", "Tipo", "N° Factura", "Proveedor", "Monto"],
+        ...comprasDetalle.map(c => [
+          new Date(c.fecha_compra).toLocaleDateString('es-AR'),
+          c.tipo_factura,
+          c.punto_venta ? `${c.punto_venta}-${c.numero_factura}` : c.numero_factura,
+         c.proveedor?.map(p => p.nombre).join(', ') || 'Proveedor no encontrado',
+          c.total_factura
+        ])
+      ];
+      
+      const wsCompras = XLSX.utils.aoa_to_sheet(comprasParaAnalisis);
+      wsCompras['!cols'] = [{ wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 25 }, { wch: 15 }];
+      XLSX.utils.book_append_sheet(wb, wsCompras, "Solo Compras");
+    }
+
+    // Generar el archivo Excel
+    const nombreArchivo = `Facturacion_Compras_Detallado_${filtro.fechaInicio}_${filtro.fechaFin}.xlsx`;
+    XLSX.writeFile(wb, nombreArchivo);
+
+    console.log(`✅ Exportado: ${facturasDetalle?.length || 0} facturas y ${comprasDetalle?.length || 0} compras`);
+    
+  } catch (error) {
+    console.error('Error exportando facturación y compras:', error);
+    alert('Error al exportar el informe detallado');
+  } finally {
+    setLoading(false);
+  }
 };
 
-// Función para exportar informe de Gestión de Préstamos
-const exportarGestionPrestamos = () => {
-  const datos = [
-    ["GESTIÓN DE PRÉSTAMOS - GP CAPITAL", "", "", ""],
-    [`Período: ${filtro.fechaInicio} al ${filtro.fechaFin}`, "", "", ""],
-    ["", "", "", ""],
-    ["Concepto", "Monto", "", ""],
-    ["Préstamos Otorgados", informe.prestamosOtorgados, "", ""],
-    ["Cuotas Cobradas", informe.cuotasCobradas, "", ""],
-    ["Cuotas Pendientes", informe.cuotasPendientes, "", ""],
-    ["", "", "", ""],
-    ["Detalle de Préstamos", "", "", ""],
-    ["Fecha", "Cliente", "Monto Total", "Estado"],
-    ["", "", "", ""],
-    ["Detalle de Cuotas", "", "", ""],
-    ["Fecha Vencimiento", "Préstamo", "Cliente", "Monto", "Estado"]
-  ];
+{/* 
+// También puedes agregar esta función mejorada para exportar solo facturas con más detalle
+const exportarFacturasDetallado = async () => {
+  setLoading(true);
+  try {
+    const { data: facturasCompletas, error } = await supabase
+      .from('facturacion')
+      .select(`
+        *,
+        cliente:cliente_id(
+          nombre,
+          apellido,
+          tipo_cliente,
+          empresa,
+          dni,
+          cuit
+        ),
+        tipo_iva:tipo_iva_id(nombre),
+        forma_pago:forma_pago_id(nombre),
+        detalles_factura(
+          descripcion,
+          cantidad,
+          precio_unitario,
+          subtotal
+        )
+      `)
+      .eq('eliminado', false)
+      .gte('fecha_emision', filtro.fechaInicio)
+      .lte('fecha_emision', filtro.fechaFin)
+      .order('fecha_emision', { ascending: false });
 
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(datos);
-  ws['!cols'] = [
-    { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
-  ];
-  XLSX.utils.book_append_sheet(wb, ws, "Gestión Préstamos");
-  
-  //const fechaActual = new Date().toISOString().split('T')[0];
-  const nombreArchivo = `Gestion_Prestamos_${filtro.fechaInicio}_${filtro.fechaFin}.xlsx`;
-  XLSX.writeFile(wb, nombreArchivo);
+    if (error) throw error;
+
+    const datos = [
+      ["REPORTE DETALLADO DE FACTURAS - GP CAPITAL", "", "", "", "", "", ""],
+      [`Período: ${filtro.fechaInicio} al ${filtro.fechaFin}`, "", "", "", "", "", ""],
+      ["", "", "", "", "", "", ""],
+      ["Fecha", "Tipo", "N° Factura", "Cliente", "Condición IVA", "Total Neto", "IVA", "Total Final", "Estado AFIP"],
+      ...facturasCompletas?.map(factura => [
+        new Date(factura.fecha_emision).toLocaleDateString('es-AR'),
+        factura.tipo_factura,
+        factura.punto_venta ? `${factura.punto_venta}-${String(factura.numero_factura).padStart(8, '0')}` : String(factura.numero_factura),
+        factura.cliente?.tipo_cliente === 'EMPRESA' 
+          ? factura.cliente.empresa 
+          : `${factura.cliente?.apellido}, ${factura.cliente?.nombre}`,
+        factura.tipo_iva?.nombre,
+        factura.total_neto,
+        factura.iva,
+        factura.total_factura,
+        factura.afip_cargada ? 'Registrada' : 'Pendiente'
+      ]) || []
+    ];
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(datos);
+    ws['!cols'] = [
+      { wch: 12 }, { wch: 8 }, { wch: 15 }, { wch: 25 }, 
+      { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }
+    ];
+    
+    XLSX.utils.book_append_sheet(wb, ws, "Facturas Detallado");
+    XLSX.writeFile(wb, `Facturas_Completo_${filtro.fechaInicio}_${filtro.fechaFin}.xlsx`);
+
+  } catch (error) {
+    console.error('Error exportando facturas detallado:', error);
+  } finally {
+    setLoading(false);
+  }
 };
+*/}
+
+// Función para exportar informe DETALLADO de Gestión de Préstamos - ACTUALIZADA
+const exportarGestionPrestamos = async () => {
+  setLoading(true);
+  try {
+    // Obtener datos detallados de préstamos
+    const { data: prestamos, error: prestamosError } = await supabase
+      .from('prestamos')
+      .select(`
+        *,
+        cliente:cliente_id(
+          nombre,
+          apellido,
+          tipo_cliente,
+          empresa,
+          dni,
+          cuit
+        )
+      `)
+      .gte('fecha_inicio', filtro.fechaInicio)
+      .lte('fecha_inicio', filtro.fechaFin)
+      .order('fecha_inicio', { ascending: false });
+
+    if (prestamosError) throw prestamosError;
+
+    // Obtener datos detallados de cuotas del período
+    const { data: cuotas, error: cuotasError } = await supabase
+      .from('cuotas')
+      .select(`
+        *,
+        prestamo:prestamo_id(
+          cliente_id,
+          monto_total,
+          cliente:cliente_id(
+            nombre,
+            apellido,
+            tipo_cliente,
+            empresa
+          )
+        )
+      `)
+      .gte('fecha_vencimiento', filtro.fechaInicio)
+      .lte('fecha_vencimiento', filtro.fechaFin)
+      .order('fecha_vencimiento', { ascending: false });
+
+    if (cuotasError) throw cuotasError;
+
+    // Obtener pagos del período
+    const { data: pagos, error: pagosError } = await supabase
+      .from('pagos')
+      .select(`
+        *,
+        cuota:cuota_id(
+          numero_cuota,
+          prestamo:prestamo_id(
+            cliente:cliente_id(
+              nombre,
+              apellido,
+              tipo_cliente,
+              empresa
+            )
+          )
+        )
+      `)
+      .gte('fecha_pago', filtro.fechaInicio)
+      .lte('fecha_pago', filtro.fechaFin + ' 23:59:59')
+      .order('fecha_pago', { ascending: false });
+
+    if (pagosError) throw pagosError;
+
+    // Calcular totales
+    const totales = {
+      prestamosOtorgados: prestamos?.reduce((sum, p) => sum + Number(p.monto_total), 0) || 0,
+      cuotasPendientes: cuotas?.filter(c => c.estado === 'PENDIENTE').reduce((sum, c) => sum + Number(c.monto), 0) || 0,
+      cuotasCobradas: pagos?.reduce((sum, p) => sum + Number(p.monto), 0) || 0
+    };
+
+    // Crear datos base
+    const datosBase = [
+      ["GESTIÓN DE PRÉSTAMOS - GP CAPITAL", "", "", "", "", ""],
+      [`Período: ${filtro.fechaInicio} al ${filtro.fechaFin}`, "", "", "", "", ""],
+      ["", "", "", "", "", ""],
+      ["RESUMEN", "", "", "", "", ""],
+      ["Concepto", "Monto", "", "", "", ""],
+      ["Préstamos Otorgados", totales.prestamosOtorgados, "", "", "", ""],
+      ["Cuotas Cobradas", totales.cuotasCobradas, "", "", "", ""],
+      ["Cuotas Pendientes", totales.cuotasPendientes, "", "", "", ""],
+      ["", "", "", "", "", ""],
+      ["DETALLE DE PRÉSTAMOS", "", "", "", "", ""],
+      ["Fecha", "Cliente", "Monto Total", "Tasa (%)", "Cuotas", "Estado"]
+    ];
+
+    // Agregar detalles de préstamos
+    const detallesPrestamos = prestamos?.map(prestamo => {
+      const nombreCliente = prestamo.cliente?.tipo_cliente === 'EMPRESA'
+        ? prestamo.cliente.empresa || prestamo.cliente.nombre
+        : `${prestamo.cliente?.apellido || ''}, ${prestamo.cliente?.nombre || ''}`.trim();
+
+      return [
+        new Date(prestamo.fecha_inicio).toLocaleDateString('es-AR'),
+        nombreCliente,
+        prestamo.monto_total,
+        prestamo.tasa_interes,
+        prestamo.cantidad_cuotas,
+        prestamo.estado
+      ];
+    }) || [];
+
+    // Separador para cuotas
+    const separadorCuotas = [
+      ["", "", "", "", "", ""],
+      ["DETALLE DE CUOTAS", "", "", "", "", ""],
+      ["Fecha Vencimiento", "Cliente", "N° Cuota", "Monto", "Estado", "Fecha Pago"]
+    ];
+
+    // Agregar detalles de cuotas
+    const detallesCuotas = cuotas?.map(cuota => {
+      const nombreCliente = cuota.prestamo?.cliente?.tipo_cliente === 'EMPRESA'
+        ? cuota.prestamo.cliente.empresa || cuota.prestamo.cliente.nombre
+        : `${cuota.prestamo?.cliente?.apellido || ''}, ${cuota.prestamo?.cliente?.nombre || ''}`.trim();
+
+      return [
+        new Date(cuota.fecha_vencimiento).toLocaleDateString('es-AR'),
+        nombreCliente,
+        cuota.numero_cuota,
+        cuota.monto,
+        cuota.estado,
+        cuota.fecha_pago ? new Date(cuota.fecha_pago).toLocaleDateString('es-AR') : '-'
+      ];
+    }) || [];
+
+    // Separador para pagos
+    const separadorPagos = [
+      ["", "", "", "", "", ""],
+      ["DETALLE DE PAGOS", "", "", "", "", ""],
+      ["Fecha Pago", "Cliente", "N° Cuota", "Monto", "Método Pago", "Comprobante"]
+    ];
+
+    // Agregar detalles de pagos
+    const detallesPagos = pagos?.map(pago => {
+      const nombreCliente = pago.cuota?.prestamo?.cliente?.tipo_cliente === 'EMPRESA'
+        ? pago.cuota.prestamo.cliente.empresa || pago.cuota.prestamo.cliente.nombre
+        : `${pago.cuota?.prestamo?.cliente?.apellido || ''}, ${pago.cuota?.prestamo?.cliente?.nombre || ''}`.trim();
+
+      return [
+        new Date(pago.fecha_pago).toLocaleDateString('es-AR'),
+        nombreCliente,
+        pago.cuota?.numero_cuota || '-',
+        pago.monto,
+        pago.metodo_pago,
+        pago.comprobante
+      ];
+    }) || [];
+
+    // Estadísticas
+    const estadisticas = [
+      ["", "", "", "", "", ""],
+      ["ESTADÍSTICAS", "", "", "", "", ""],
+      ["Total Préstamos", prestamos?.length || 0, "", "", "", ""],
+      ["Total Cuotas", cuotas?.length || 0, "", "", "", ""],
+      ["Cuotas Pendientes", cuotas?.filter(c => c.estado === 'PENDIENTE').length || 0, "", "", "", ""],
+      ["Cuotas Pagadas", cuotas?.filter(c => c.estado === 'PAGADO').length || 0, "", "", "", ""],
+      ["Cuotas Vencidas", cuotas?.filter(c => c.estado === 'VENCIDO').length || 0, "", "", "", ""],
+      ["Total Pagos", pagos?.length || 0, "", "", "", ""],
+      ["Promedio Préstamo", prestamos?.length ? (totales.prestamosOtorgados / prestamos.length).toFixed(2) : 0, "", "", "", ""]
+    ];
+
+    // Combinar todos los datos
+    const datosCompletos = [
+      ...datosBase,
+      ...detallesPrestamos,
+      ...separadorCuotas,
+      ...detallesCuotas,
+      ...separadorPagos,
+      ...detallesPagos,
+      ...estadisticas
+    ];
+
+    // Crear libro de trabajo
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(datosCompletos);
+    ws['!cols'] = [
+      { wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 15 }
+    ];
+
+    // Formatear
+    if (ws['!ref']) {
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cell_address = XLSX.utils.encode_cell({c: C, r: R});
+          if (!ws[cell_address]) continue;
+          
+          const cell = ws[cell_address];
+          if (typeof cell.v === 'string' && 
+              (cell.v.includes('CAPITAL') || cell.v.includes('RESUMEN') || 
+               cell.v.includes('DETALLE') || cell.v.includes('ESTADÍSTICAS'))) {
+            if (!cell.s) cell.s = {};
+            cell.s.font = { bold: true };
+          }
+        }
+      }
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, "Gestión Préstamos");
+
+    // Crear hojas adicionales
+    if (prestamos && prestamos.length > 0) {
+      const prestamosData = [
+        ["SOLO PRÉSTAMOS", "", "", "", ""],
+        ["Fecha", "Cliente", "Monto", "Tasa", "Cuotas", "Estado"],
+        ...prestamos.map(p => [
+          new Date(p.fecha_inicio).toLocaleDateString('es-AR'),
+          p.cliente?.tipo_cliente === 'EMPRESA' ? p.cliente.empresa : `${p.cliente?.apellido}, ${p.cliente?.nombre}`,
+          p.monto_total,
+          p.tasa_interes,
+          p.cantidad_cuotas,
+          p.estado
+        ])
+      ];
+      
+      const wsPrestamos = XLSX.utils.aoa_to_sheet(prestamosData);
+      wsPrestamos['!cols'] = [{ wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 10 }, { wch: 10 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, wsPrestamos, "Solo Préstamos");
+    }
+
+    if (cuotas && cuotas.length > 0) {
+      const cuotasData = [
+        ["SOLO CUOTAS", "", "", "", ""],
+        ["Fecha Venc.", "Cliente", "N° Cuota", "Monto", "Estado"],
+        ...cuotas.map(c => [
+          new Date(c.fecha_vencimiento).toLocaleDateString('es-AR'),
+          c.prestamo?.cliente?.tipo_cliente === 'EMPRESA' ? c.prestamo.cliente.empresa : `${c.prestamo?.cliente?.apellido}, ${c.prestamo?.cliente?.nombre}`,
+          c.numero_cuota,
+          c.monto,
+          c.estado
+        ])
+      ];
+      
+      const wsCuotas = XLSX.utils.aoa_to_sheet(cuotasData);
+      wsCuotas['!cols'] = [{ wch: 15 }, { wch: 25 }, { wch: 10 }, { wch: 15 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, wsCuotas, "Solo Cuotas");
+    }
+
+    const nombreArchivo = `Gestion_Prestamos_Detallado_${filtro.fechaInicio}_${filtro.fechaFin}.xlsx`;
+    XLSX.writeFile(wb, nombreArchivo);
+
+    console.log(`✅ Exportado: ${prestamos?.length || 0} préstamos, ${cuotas?.length || 0} cuotas, ${pagos?.length || 0} pagos`);
+    
+  } catch (error) {
+    console.error('Error exportando gestión de préstamos:', error);
+    alert('Error al exportar gestión de préstamos');
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <div className="min-h-screen ">
@@ -765,14 +1459,14 @@ const exportarGestionPrestamos = () => {
             <div className="flex justify-between items-center mb-4">
             <h3 className="text-xl font-semibold text-gray-700 mb-4">Movimientos Bancarios</h3>
             <button
-      onClick={exportarMovimientosBanco}
-      className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 shadow-sm"
-  title="Exportar a Excel"
->
-  <Download className="h-4 w-4" />
-  Exportar
-</button>
-    </div>
+                  onClick={exportarMovimientosBanco}
+                  className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 shadow-sm"
+              title="Exportar a Excel"
+            >
+              <Download className="h-4 w-4" />
+              Exportar
+            </button>
+                </div>
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-gray-600">Ingresos:</span>
@@ -831,16 +1525,16 @@ const exportarGestionPrestamos = () => {
           {/* Préstamos */}
           <div className="bg-white p-6 rounded-lg shadow-md">
             <div className="flex justify-between items-center mb-4">
-    <h3 className="text-xl font-semibold text-gray-700">Gestión de Préstamos</h3>
-    <button
-      onClick={exportarGestionPrestamos}
-      className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 shadow-sm"
-  title="Exportar a Excel"
->
-  <Download className="h-4 w-4" />
-  Exportar
-</button>
-  </div>
+              <h3 className="text-xl font-semibold text-gray-700">Gestión de Préstamos</h3>
+              <button
+                onClick={exportarGestionPrestamos}
+                className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 shadow-sm"
+            title="Exportar a Excel"
+          >
+            <Download className="h-4 w-4" />
+            Exportar
+          </button>
+            </div>
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-gray-600">Préstamos Otorgados:</span>

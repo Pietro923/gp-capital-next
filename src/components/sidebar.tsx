@@ -23,6 +23,8 @@ import {
   Mail,
   LogOut,
   ChevronLeft,
+  BookOpenCheck,
+  SquareLibrary
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -74,6 +76,9 @@ const sections: Section[] = [
       { id: "facturacion", name: "Facturación", icon: Receipt, href: "/Billing" },
       { id: "compras", name: "Compras", icon: ShoppingCart, href: "/Purchases" },
       { id: "caja", name: "Caja", icon: DollarSign, href: "/CashRegister" },
+      { id: "pagos", name: "Gestión de Pagos", icon: BookOpenCheck, href: "/PaymentManagement" },
+      { id: "cobros", name: " Gestión de Cobros", icon: SquareLibrary, href: "/InvoiceCollections" },
+
     ]
   },
 ];

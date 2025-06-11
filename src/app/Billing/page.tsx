@@ -159,6 +159,9 @@ const Billing: React.FC = () => {
     caeVencimiento: '',
   });
   //const [facturaIdToUpdate, setFacturaIdToUpdate] = useState<string | null>(null);
+  // Estados para editar
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingFactura, setEditingFactura] = useState<FacturaData | null>(null);
 
   // Cargar datos necesarios
   useEffect(() => {
@@ -193,37 +196,39 @@ const Billing: React.FC = () => {
 }, []);
 
   // Cargar historial de facturas
-  const loadFacturasHistory = async () => {
-    setIsLoadingHistory(true);
-    try {
-      const { data, error: historyError } = await supabase
-  .from('facturacion')
-  .select(`
-    *,
-    cliente:cliente_id(
-      nombre, 
-      apellido, 
-      direccion, 
-      dni, 
-      cuit, 
-      tipo_cliente,
-      empresa,
-      tipo_iva:tipo_iva_id(nombre)
-    ),
-    tipo_iva:tipo_iva_id(nombre),
-    forma_pago:forma_pago_id(nombre)
-  `)
-  .order('created_at', { ascending: false })
-  .limit(20);
-      
-      if (historyError) throw historyError;
-      if (data) setFacturas(data as FacturaData[]);
-    } catch (error) {
-      console.error('Error cargando historial:', error);
-    } finally {
-      setIsLoadingHistory(false);
-    }
-  };
+  // Cargar historial de facturas
+const loadFacturasHistory = async () => {
+  setIsLoadingHistory(true);
+  try {
+    const { data, error: historyError } = await supabase
+      .from('facturacion')
+      .select(`
+        *,
+        cliente:cliente_id(
+          nombre, 
+          apellido, 
+          direccion, 
+          dni, 
+          cuit, 
+          tipo_cliente,
+          empresa,
+          tipo_iva:tipo_iva_id(nombre)
+        ),
+        tipo_iva:tipo_iva_id(nombre),
+        forma_pago:forma_pago_id(nombre)
+      `)
+      .eq('eliminado', false)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    
+    if (historyError) throw historyError;
+    if (data) setFacturas(data as FacturaData[]);
+  } catch (error) {
+    console.error('Error cargando historial:', error);
+  } finally {
+    setIsLoadingHistory(false);
+  }
+};
 
   // Manejar selección de cliente
   const handleClienteChange = (clienteId: string) => {
@@ -467,16 +472,70 @@ const Billing: React.FC = () => {
 
   // Generar factura
   const handleGenerarFactura = async () => {
-    if (!formData.tipoFactura || !formData.clienteId || !formData.tipoIvaId || !formData.formaPagoId || items.length === 0 || !formData.fecha) {
-      setError('Por favor complete todos los campos necesarios');
-      return;
-    }
-    
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      // Insertar la factura principal
+  if (!formData.tipoFactura || !formData.clienteId || !formData.tipoIvaId || !formData.formaPagoId || items.length === 0 || !formData.fecha) {
+    setError('Por favor complete todos los campos necesarios');
+    return;
+  }
+  
+  setIsLoading(true);
+  setError(null);
+  
+  try {
+    // Si está en modo edición, actualizar la factura existente
+    if (isEditMode && editingFactura) {
+      // Actualizar factura existente
+      const { error: facturaError } = await supabase
+        .from('facturacion')
+        .update({
+          tipo_factura: formData.tipoFactura,
+          cliente_id: formData.clienteId,
+          tipo_iva_id: formData.tipoIvaId,
+          forma_pago_id: formData.formaPagoId,
+          total_neto: totalNeto,
+          iva: totalIVA,
+          total_factura: total,
+          punto_venta: formData.puntoVenta,
+          numero_factura: formData.numeroFactura ? parseInt(formData.numeroFactura) : null,
+          fecha_factura: formData.fecha
+        })
+        .eq('id', editingFactura.id);
+        
+      if (facturaError) throw facturaError;
+      
+      // Eliminar detalles existentes
+      await supabase
+        .from('detalles_factura')
+        .delete()
+        .eq('factura_id', editingFactura.id);
+      
+      // Insertar nuevos detalles
+      const detallesPromises = items.map(item => 
+        supabase
+          .from('detalles_factura')
+          .insert([
+            {
+              factura_id: editingFactura.id,
+              descripcion: item.description,
+              cantidad: item.quantity,
+              precio_unitario: item.unitPrice,
+              subtotal: item.total
+            }
+          ])
+      );
+      
+      await Promise.all(detallesPromises);
+      
+      // Refrescar el historial de facturas
+      loadFacturasHistory();
+      
+      // Salir del modo edición
+      setIsEditMode(false);
+      setEditingFactura(null);
+      
+      alert('Factura actualizada exitosamente');
+      
+    } else {
+      // Crear nueva factura (código original)
       const { data: nuevaFactura, error: facturaError } = await supabase
         .from('facturacion')
         .insert([
@@ -490,7 +549,7 @@ const Billing: React.FC = () => {
             total_factura: total,
             punto_venta: formData.puntoVenta,
             numero_factura: formData.numeroFactura ? parseInt(formData.numeroFactura) : null,
-            fecha_factura: formData.fecha, // Agregar fecha de factura
+            fecha_factura: formData.fecha,
             afip_cargada: false
           }
         ])
@@ -510,7 +569,7 @@ const Billing: React.FC = () => {
               descripcion: item.description,
               cantidad: item.quantity,
               precio_unitario: item.unitPrice,
-              subtotal: item.total // Usar el total que incluye IVA
+              subtotal: item.total
             }
           ])
       );
@@ -526,27 +585,28 @@ const Billing: React.FC = () => {
       // Refrescar el historial de facturas
       loadFacturasHistory();
       
-      // Limpiar el formulario
-      setItems([]);
-      setFormData({
-        tipoFactura: '',
-        clienteId: '',
-        tipoIvaId: '',
-        formaPagoId: '',
-        puntoVenta: formData.puntoVenta,
-        numeroFactura: '',
-        fecha: new Date().toISOString().split('T')[0], // Reset a fecha actual
-      });
-      
       alert('Factura generada exitosamente');
-      
-    } catch (error) {
-      console.error('Error generando factura:', error);
-      setError('Error al generar la factura');
-    } finally {
-      setIsLoading(false);
     }
-  };
+    
+    // Limpiar el formulario
+    setItems([]);
+    setFormData({
+      tipoFactura: '',
+      clienteId: '',
+      tipoIvaId: '',
+      formaPagoId: '',
+      puntoVenta: formData.puntoVenta,
+      numeroFactura: '',
+      fecha: new Date().toISOString().split('T')[0],
+    });
+    
+  } catch (error) {
+    console.error('Error processing factura:', error);
+    setError(isEditMode ? 'Error al actualizar la factura' : 'Error al generar la factura');
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   // Estado de factura formateado
   const getEstadoFactura = (factura: FacturaData) => {
@@ -574,6 +634,73 @@ const Billing: React.FC = () => {
   } catch (error) {
     console.error('Error actualizando estado AFIP:', error);
     alert('Error al actualizar el estado AFIP');
+  }
+};
+
+const handleEdit = async (factura: FacturaData) => {
+  try {
+    // Cargar detalles de la factura
+    const { data: detallesData, error } = await supabase
+      .from('detalles_factura')
+      .select('*')
+      .eq('factura_id', factura.id);
+    
+    if (error) throw error;
+    
+    setEditingFactura(factura);
+    setIsEditMode(true);
+    
+    // Llenar formulario con datos existentes
+    setFormData({
+      tipoFactura: factura.tipo_factura,
+      clienteId: factura.cliente_id,
+      tipoIvaId: factura.tipo_iva_id,
+      formaPagoId: factura.forma_pago_id,
+      puntoVenta: factura.punto_venta || '0001',
+      numeroFactura: factura.numero_factura ? String(factura.numero_factura) : '',
+      fecha: factura.fecha_factura || factura.created_at.split('T')[0]
+    });
+    
+    // Llenar items con detalles existentes
+    const itemsFromDB = detallesData?.map(detalle => ({
+      description: detalle.descripcion,
+      quantity: detalle.cantidad,
+      unitPrice: detalle.precio_unitario,
+      netoAmount: detalle.cantidad * detalle.precio_unitario,
+      ivaPercentage: 21, // Calcular desde el IVA total si es necesario
+      ivaAmount: detalle.subtotal - (detalle.cantidad * detalle.precio_unitario),
+      total: detalle.subtotal
+    })) || [];
+    
+    setItems(itemsFromDB);
+    
+  } catch (error) {
+    console.error('Error loading factura for edit:', error);
+    setError('Error al cargar la factura para edición');
+  }
+};
+
+const handleDelete = async (facturaId: string) => {
+  if (!confirm('¿Está seguro de eliminar esta factura?')) return;
+  
+  try {
+    const { error } = await supabase
+      .from('facturacion')
+      .update({ 
+        eliminado: true, 
+        fecha_eliminacion: new Date().toISOString() 
+      })
+      .eq('id', facturaId);
+      
+    if (error) throw error;
+    
+    // Actualizar lista local
+    setFacturas(prev => prev.filter(f => f.id !== facturaId));
+    
+    alert('Factura eliminada exitosamente');
+  } catch (error) {
+    console.error('Error deleting factura:', error);
+    setError('Error al eliminar la factura');
   }
 };
 
@@ -834,17 +961,39 @@ const Billing: React.FC = () => {
                 
                 <div className="mt-6 flex justify-end">
                   <Button 
-                    onClick={handleGenerarFactura}
-                    disabled={isLoading || items.length === 0}
-                    className="flex items-center gap-2"
-                  >
-                    {isLoading ? 'Generando...' : (
-                      <>
-                        <FileText className="h-4 w-4" />
-                        Generar Factura
-                      </>
-                    )}
-                  </Button>
+  onClick={handleGenerarFactura}
+  disabled={isLoading || items.length === 0}
+  className="flex items-center gap-2"
+>
+  {isLoading ? (isEditMode ? 'Actualizando...' : 'Generando...') : (
+    <>
+      <FileText className="h-4 w-4" />
+      {isEditMode ? 'Actualizar Factura' : 'Generar Factura'}
+    </>
+  )}
+</Button>
+{isEditMode && (
+  <Button 
+    variant="outline" 
+    className="mr-2" 
+    onClick={() => {
+      setIsEditMode(false);
+      setEditingFactura(null);
+      setItems([]);
+      setFormData({
+        tipoFactura: '',
+        clienteId: '',
+        tipoIvaId: '',
+        formaPagoId: '',
+        puntoVenta: '0001',
+        numeroFactura: '',
+        fecha: new Date().toISOString().split('T')[0]
+      });
+    }}
+  >
+    Cancelar Edición
+  </Button>
+)}
                 </div>
               </CardContent>
             </Card>
@@ -911,17 +1060,36 @@ const Billing: React.FC = () => {
       </TableCell>
                           
                           <TableCell>
-                            <div className="flex gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => generatePDF(factura.id)}
-                                className="h-8 w-8 p-0"
-                              >
-                                <Download className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
+  <div className="flex gap-1">
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={() => generatePDF(factura.id)}
+      className="h-8 w-8 p-0"
+      title="Descargar PDF"
+    >
+      <Download className="h-4 w-4" />
+    </Button>
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={() => handleEdit(factura)}
+      className="h-8 w-8 p-0"
+      title="Editar factura"
+    >
+      ✏️
+    </Button>
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={() => handleDelete(factura.id)}
+      className="h-8 w-8 p-0 text-red-600"
+      title="Eliminar factura"
+    >
+      🗑️
+    </Button>
+  </div>
+</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

@@ -52,10 +52,6 @@ interface Proveedor {
   created_at: string;
 }
 
-interface ExcelRow {
-  [key: string]: string | number;
-}
-
 type TipoCliente = "PERSONA_FISICA" | "EMPRESA";
 
 interface Cliente {
@@ -89,7 +85,8 @@ const LoanSimulator: React.FC = () => {
   const [, setProveedores] = useState<Proveedor[]>([]);
   const [, setIsLoading] = useState(true);
   const [, setError] = useState<string | null>(null);
-  
+  const [fechaInicio, setFechaInicio] = useState<string>(new Date().toISOString().split('T')[0]);
+
   useEffect(() => {
     const fetchProveedores = async () => {
       setIsLoading(true);
@@ -134,100 +131,260 @@ const LoanSimulator: React.FC = () => {
   
 
 
-  const calcularCuotas = () => {
+  // Función calcularCuotas CORREGIDA para manejar tasa de interés 0%
+const calcularCuotas = () => {
+  // Validaciones básicas
+  if (!monto || monto <= 0) {
+    alert('Por favor ingrese un monto válido mayor a 0');
+    return;
+  }
+  
+  if (!plazo || plazo <= 0) {
+    alert('Por favor ingrese un plazo válido mayor a 0');
+    return;
+  }
+
+  if (tasaInteres < 0) {
+    alert('La tasa de interés no puede ser negativa');
+    return;
+  }
+
+  try {
     // Determinar periodos por año según la frecuencia
     const periodosPorAnio = frecuencia === 'semestral' ? 2 : 12;
     
     // Calcular tasa por periodo
     const tasaPorPeriodo = tasaInteres / periodosPorAnio / 100;
     
-    // Calcular cuota base sin IVA
-    const cuotaBase = 
-      (monto * tasaPorPeriodo * Math.pow(1 + tasaPorPeriodo, plazo)) / 
-      (Math.pow(1 + tasaPorPeriodo, plazo) - 1);
-    
     const nuevasCuotas: CuotaSimulada[] = [];
     let capitalPendiente = monto;
     
-    const fecha = new Date();
-// Establecer el primer día del mes actual para evitar problemas con meses de diferente longitud
-fecha.setDate(1);
-// Establecer el día 10 del mes actual como primera fecha de vencimiento
-fecha.setDate(10);
-    
+    // Configurar fecha base
+    const fecha = new Date(fechaInicio + 'T12:00:00'); // Agregar hora para evitar problemas de zona horaria
+const diaVencimiento = fecha.getDate();
+
     let montoTotalCalculado = 0;
     
-    for (let i = 1; i <= plazo; i++) {
-      // Primero avanzar el mes
-      if (frecuencia === 'semestral') {
-        fecha.setMonth(fecha.getMonth() + 6);
-      } else {
-        fecha.setMonth(fecha.getMonth() + 1);
+    // ========================================
+    // CASO ESPECIAL: TASA DE INTERÉS 0%
+    // ========================================
+    if (tasaInteres === 0 || tasaPorPeriodo === 0) {
+      // Sin intereses, solo dividir el capital en cuotas iguales
+      const capitalPorCuota = monto / plazo;
+      
+      for (let i = 1; i <= plazo; i++) {
+        // Calcular fecha de vencimiento
+        const fechaVencimiento = new Date(fechaInicio + 'T12:00:00');
+if (frecuencia === 'semestral') {
+  fechaVencimiento.setMonth(fechaVencimiento.getMonth() + (i * 6));
+} else {
+  fechaVencimiento.setMonth(fechaVencimiento.getMonth() + i);
+}
+fechaVencimiento.setDate(diaVencimiento);
+        
+        // Sin intereses
+        const interesCuota = 0;
+        
+        // Calcular IVA sobre el interés (será 0)
+        const ivaCuota = aplicarIVA ? interesCuota * (porcentajeIVA / 100) : 0;
+        
+        // Cuota = solo capital (sin intereses ni IVA)
+        const cuotaFinal = capitalPorCuota + ivaCuota; // IVA será 0
+        
+        // Actualizar capital restante
+        capitalPendiente -= capitalPorCuota;
+        
+        // Asegurar que la última cuota no deje saldo negativo
+        if (i === plazo) {
+          capitalPendiente = 0;
+        }
+        
+        montoTotalCalculado += cuotaFinal;
+        
+        nuevasCuotas.push({
+          numero: i,
+          fechaVencimiento: fechaVencimiento.toISOString().split('T')[0],
+          capitalInicial: monto - (capitalPorCuota * (i - 1)),
+          interes: interesCuota,
+          iva: ivaCuota,
+          cuota: cuotaFinal,
+          capitalRestante: Math.max(0, capitalPendiente)
+        });
       }
-      // Luego establecer el día 10
-      fecha.setDate(11);
-      // ...
-
+    } 
+    // ========================================
+    // CASO NORMAL: CON TASA DE INTERÉS
+    // ========================================
+    else {
+      // Calcular cuota base usando fórmula de anualidades
+      const cuotaBase = 
+        (monto * tasaPorPeriodo * Math.pow(1 + tasaPorPeriodo, plazo)) / 
+        (Math.pow(1 + tasaPorPeriodo, plazo) - 1);
       
-      const interesCuota = capitalPendiente * tasaPorPeriodo;
+      // Verificar que el cálculo sea válido
+      if (isNaN(cuotaBase) || !isFinite(cuotaBase)) {
+        alert('Error en el cálculo. Verifique los valores ingresados.');
+        return;
+      }
       
-      // Calcular IVA sobre el interés si corresponde
-      const ivaCuota = aplicarIVA ? interesCuota * (porcentajeIVA / 100) : 0;
-      
-      // Calcular cuota final (capital + interés + IVA)
-      const cuotaFinal = aplicarIVA ? 
-        (monto * tasaPorPeriodo * Math.pow(1 + tasaPorPeriodo, plazo) * (1 + porcentajeIVA/100)) / 
-        (Math.pow(1 + tasaPorPeriodo, plazo) - 1) :
-        cuotaBase;
-      
-      const capitalCuota = cuotaBase - interesCuota;
-      capitalPendiente -= capitalCuota;
-      
-      montoTotalCalculado += cuotaFinal;
-      nuevasCuotas.push({
-        numero: i,
-        fechaVencimiento: fecha.toISOString().split('T')[0],
-        capitalInicial: capitalPendiente + capitalCuota,
-        interes: interesCuota,
-        iva: ivaCuota,
-        cuota: cuotaFinal,
-        capitalRestante: capitalPendiente
-      });
+      for (let i = 1; i <= plazo; i++) {
+        // Calcular fecha de vencimiento
+        const fechaVencimiento = new Date(fechaInicio);
+if (frecuencia === 'semestral') {
+  fechaVencimiento.setMonth(fechaVencimiento.getMonth() + (i * 6));
+} else {
+  fechaVencimiento.setMonth(fechaVencimiento.getMonth() + i);
+}
+fechaVencimiento.setDate(diaVencimiento);
+        
+        // Calcular interés sobre capital pendiente
+        const interesCuota = capitalPendiente * tasaPorPeriodo;
+        
+        // Calcular IVA sobre el interés si corresponde
+        const ivaCuota = aplicarIVA ? interesCuota * (porcentajeIVA / 100) : 0;
+        
+        // Capital que se amortiza en esta cuota
+        const capitalCuota = cuotaBase - interesCuota;
+        
+        // Cuota final incluye capital + interés + IVA
+        const cuotaFinal = capitalCuota + interesCuota + ivaCuota;
+        
+        // Actualizar capital pendiente
+        capitalPendiente -= capitalCuota;
+        
+        // Asegurar que la última cuota no deje saldo negativo
+        if (i === plazo && capitalPendiente < 0.01) {
+          capitalPendiente = 0;
+        }
+        
+        montoTotalCalculado += cuotaFinal;
+        
+        nuevasCuotas.push({
+          numero: i,
+          fechaVencimiento: fechaVencimiento.toISOString().split('T')[0],
+          capitalInicial: capitalPendiente + capitalCuota,
+          interes: interesCuota,
+          iva: ivaCuota,
+          cuota: cuotaFinal,
+          capitalRestante: Math.max(0, capitalPendiente)
+        });
+      }
     }
+    
+    // Actualizar estados
     setCuotas(nuevasCuotas);
-    setCuotaPeriodica(nuevasCuotas[0].cuota);
+    setCuotaPeriodica(nuevasCuotas[0]?.cuota || 0);
     setMontoTotal(montoTotalCalculado);
-  };
+    
+    console.log(`✅ Simulación generada: ${nuevasCuotas.length} cuotas, Total: $${montoTotalCalculado.toFixed(2)}`);
+    
+  } catch (error) {
+    console.error('Error calculando cuotas:', error);
+    alert('Error al calcular las cuotas. Verifique los datos ingresados.');
+  }
+};
 
-  const exportToExcel = () => {
-    const excelData: ExcelRow[] = cuotas.map(cuota => ({
-      'Número de Cuota': cuota.numero,
-      'Fecha Vencimiento': new Date(cuota.fechaVencimiento).toLocaleDateString('es-AR'),
-      'Capital Inicial': Math.round(cuota.capitalInicial),
-      'Interés': Math.round(cuota.interes),
-      'IVA': Math.round(cuota.iva),
-      'Cuota Total': Math.round(cuota.cuota),
-      'Capital Restante': Math.round(cuota.capitalRestante)
-    }));
-    let csvContent = '\ufeff';
-    const headers = Object.keys(excelData[0]);
-    csvContent += headers.join(';') + '\n';
-    excelData.forEach(row => {
-      const values = headers.map(header => {
-        const value = row[header];
-        return typeof value === 'string' ? `"${value}"` : value;
-      });
-      csvContent += values.join(';') + '\n';
+// Función exportToExcel MEJORADA con más información
+const exportToExcel = () => {
+  if (cuotas.length === 0) {
+    alert('No hay cuotas para exportar. Primero calcule la simulación.');
+    return;
+  }
+
+  try {
+    // Obtener información del cliente seleccionado
+    const clienteSeleccionado = clientes.find(c => c.id === clienteId);
+    const nombreCliente = clienteSeleccionado ? 
+      (clienteSeleccionado.tipo_cliente === "EMPRESA" 
+        ? clienteSeleccionado.empresa 
+        : `${clienteSeleccionado.apellido}, ${clienteSeleccionado.nombre}`) 
+      : 'Cliente no seleccionado';
+
+    // Crear datos del encabezado con información de la simulación
+    const encabezado = [
+      [`SIMULACIÓN DE PRÉSTAMO - GP CAPITAL`, '', '', '', '', '', ''],
+      [`Fecha de Simulación: ${new Date().toLocaleDateString('es-AR')}`, '', '', '', '', '', ''],
+      ['', '', '', '', '', '', ''],
+      ['DATOS DEL PRÉSTAMO', '', '', '', '', '', ''],
+      ['Cliente:', nombreCliente, '', '', '', '', ''],
+      ['Moneda:', moneda, '', '', '', '', ''],
+      ['Monto del Préstamo:', `$${monto.toLocaleString('es-AR')}`, '', '', '', '', ''],
+      ['Tasa de Interés Anual:', `${tasaInteres}%`, '', '', '', '', ''],
+      ['Frecuencia de Pago:', frecuencia === 'semestral' ? 'Semestral' : 'Mensual', '', '', '', '', ''],
+      ['Plazo:', `${plazo} ${frecuencia === 'semestral' ? 'semestres' : 'meses'}`, '', '', '', '', ''],
+      ['Aplicar IVA:', aplicarIVA ? 'Sí' : 'No', '', '', '', '', ''],
+      ...(aplicarIVA ? [['Porcentaje IVA:', `${porcentajeIVA}%`, '', '', '', '', '']] : []),
+      ['', '', '', '', '', '', ''],
+      ['RESUMEN', '', '', '', '', '', ''],
+      ['Cuota Periódica:', `$${Math.round(cuotaPeriodica).toLocaleString('es-AR')}`, '', '', '', '', ''],
+      ['Monto Total a Pagar:', `$${Math.round(montoTotal).toLocaleString('es-AR')}`, '', '', '', '', ''],
+      ['Costo Financiero Total:', `$${Math.round(montoTotal - monto).toLocaleString('es-AR')}`, '', '', '', '', ''],
+      ['', '', '', '', '', '', ''],
+      ['DETALLE DE CUOTAS', '', '', '', '', '', '']
+    ];
+
+    // Crear encabezado de la tabla
+    const cabeceras = aplicarIVA 
+      ? ['Número de Cuota', 'Fecha Vencimiento', 'Capital Inicial', 'Interés', 'IVA', 'Cuota Total', 'Capital Restante']
+      : ['Número de Cuota', 'Fecha Vencimiento', 'Capital Inicial', 'Interés', 'Cuota Total', 'Capital Restante'];
+
+    // Crear datos de las cuotas
+    const excelData = cuotas.map(cuota => {
+      const filaBase = [
+        cuota.numero,
+        new Date(cuota.fechaVencimiento).toLocaleDateString('es-AR'),
+        Math.round(cuota.capitalInicial),
+        Math.round(cuota.interes),
+        ...(aplicarIVA ? [Math.round(cuota.iva)] : []),
+        Math.round(cuota.cuota),
+        Math.round(cuota.capitalRestante)
+      ];
+      return filaBase;
     });
-    const blob = new Blob([csvContent], { type: 'application/vnd.ms-excel;charset=utf-8' });
+
+    // Combinar todos los datos
+    const datosCompletos = [
+      ...encabezado,
+      cabeceras,
+      ...excelData
+    ];
+
+    // Generar CSV
+    let csvContent = '\ufeff'; // BOM para UTF-8
+    datosCompletos.forEach(row => {
+      const processedRow = row.map(cell => {
+        if (typeof cell === 'number') {
+          return cell;
+        }
+        return `"${cell}"`;
+      });
+      csvContent += processedRow.join(';') + '\n';
+    });
+
+    // Descargar archivo
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `simulacion_prestamo_${new Date().toISOString().split('T')[0]}.xls`);
+    
+    // Nombre de archivo más descriptivo
+    const fechaActual = new Date().toISOString().split('T')[0];
+    const tipoTasa = tasaInteres === 0 ? 'SinInteres' : `${tasaInteres}pct`;
+    const nombreArchivo = `Simulacion_${(nombreCliente || 'SinNombre').replace(/[^a-zA-Z0-9]/g, '_')}_${tipoTasa}_${fechaActual}.csv`;
+    
+    link.setAttribute('download', nombreArchivo);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
+    URL.revokeObjectURL(url);
+
+    console.log(`✅ Exportado: ${cuotas.length} cuotas a ${nombreArchivo}`);
+    
+  } catch (error) {
+    console.error('Error exportando:', error);
+    alert('Error al exportar los datos');
+  }
+};
 
   const toggleCuotaDetails = (numero: number) => {
     if (expandedCuota === numero) {
@@ -335,6 +492,14 @@ fecha.setDate(10);
                 placeholder="Ingrese el plazo"
               />
             </div>
+            <div className="space-y-2">
+  <label className="text-sm font-medium">Fecha de Inicio del Préstamo</label>
+  <Input
+    type="date"
+    value={fechaInicio}
+    onChange={(e) => setFechaInicio(e.target.value)}
+  />
+</div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Tasa de Interés Anual (%)</label>
               <Input

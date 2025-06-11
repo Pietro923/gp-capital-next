@@ -57,7 +57,8 @@ export default function Purchases() {
   const [, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [formaPagoId, setFormaPagoId] = useState<string>('');
-  
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
   // Estado para el formulario
   const [formData, setFormData] = useState({
     providerId: '',
@@ -182,29 +183,88 @@ export default function Purchases() {
     }));
   };
 
-  // Registrar nueva compra
+  // Registrar nueva compra y editar
   const handleSubmit = async () => {
-    if (!formData.providerId || !formData.netoAmount || !formData.date || !formData.product) {
-      setError('Por favor complete todos los campos obligatorios');
-      return;
-    }
+  if (!formData.providerId || !formData.netoAmount || !formData.date || !formData.product) {
+    setError('Por favor complete todos los campos obligatorios');
+    return;
+  }
+  
+  setIsSubmitting(true);
+  setError(null);
+  
+  try {
+    const provider = providers.find(p => p.id.toString() === formData.providerId);
+    const netoAmount = parseFloat(formData.netoAmount);
+    const ivaAmount = calcularIVA();
+    const otrosAmount = parseFloat(formData.otrosAmount) || 0;
+    const totalAmount = calcularTotal();
     
-    setIsSubmitting(true);
-    setError(null);
+    // Crear número de factura compuesto
+    const numeroFactura = formData.comprobante ? 
+      `${formData.puntoVenta}-${formData.comprobante}` : 
+      `F-${Date.now()}`;
     
-    try {
-      const provider = providers.find(p => p.id.toString() === formData.providerId);
-      const netoAmount = parseFloat(formData.netoAmount);
-      const ivaAmount = calcularIVA();
-      const otrosAmount = parseFloat(formData.otrosAmount) || 0;
-      const totalAmount = calcularTotal();
+    // Si está en modo edición, actualizar la compra existente
+    if (isEditMode && editingPurchase) {
+      // Actualizar la compra principal
+      const { error: compraError } = await supabase
+        .from('compras')
+        .update({
+          proveedor_id: formData.providerId,
+          total_factura: totalAmount,
+          fecha_compra: formData.date,
+          tipo_factura: formData.tipoComprobante,
+          total_neto: netoAmount,
+          iva: ivaAmount,
+          otros_gastos: otrosAmount,
+          numero_factura: numeroFactura,
+          punto_venta: formData.puntoVenta,
+          comentarios: formData.comentarios
+        })
+        .eq('id', editingPurchase.id);
+        
+      if (compraError) throw compraError;
       
-      // Crear número de factura compuesto
-      const numeroFactura = formData.comprobante ? 
-        `${formData.puntoVenta}-${formData.comprobante}` : 
-        `F-${Date.now()}`;
+      // Actualizar detalles_compra
+      const { error: detalleError } = await supabase
+        .from('detalles_compra')
+        .update({
+          descripcion: formData.product,
+          cantidad: parseInt(formData.quantity),
+          precio_unitario: netoAmount / parseInt(formData.quantity),
+          subtotal: netoAmount
+        })
+        .eq('compra_id', editingPurchase.id);
+        
+      if (detalleError) throw detalleError;
       
-      // Insertar la compra principal
+      // Actualizar la lista local
+      setPurchases(prev => prev.map(p => 
+        p.id === editingPurchase.id 
+          ? {
+              ...p,
+              date: formData.date,
+              provider: provider?.nombre || 'Desconocido',
+              product: formData.product,
+              netoAmount: netoAmount,
+              ivaAmount: ivaAmount,
+              otrosAmount: otrosAmount,
+              totalAmount: totalAmount,
+              comentarios: formData.comentarios,
+              comprobante: formData.comprobante,
+              tipoComprobante: formData.tipoComprobante,
+              puntoVenta: formData.puntoVenta
+            }
+          : p
+      ));
+      
+      // Salir del modo edición
+      setIsEditMode(false);
+      setEditingPurchase(null);
+      
+    } else {
+      // Crear nueva compra (código original)
       const { data: compraData, error: compraError } = await supabase
         .from('compras')
         .insert([
@@ -257,29 +317,30 @@ export default function Purchases() {
         tipoComprobante: formData.tipoComprobante,
         puntoVenta: formData.puntoVenta
       }, ...prev]);
-      
-      // Limpiar el formulario
-      setFormData({
-        providerId: '',
-        netoAmount: '',
-        ivaPercentage: '21',
-        otrosAmount: '0',
-        date: '',
-        product: '',
-        quantity: '1',
-        comentarios: '',
-        comprobante: '',
-        tipoComprobante: 'A',
-        puntoVenta: ''
-      });
-      
-    } catch (error) {
-      console.error('Error registering purchase:', error);
-      setError('Error al registrar la compra');
-    } finally {
-      setIsSubmitting(false);
     }
-  };
+    
+    // Limpiar el formulario
+    setFormData({
+      providerId: '',
+      netoAmount: '',
+      ivaPercentage: '21',
+      otrosAmount: '0',
+      date: '',
+      product: '',
+      quantity: '1',
+      comentarios: '',
+      comprobante: '',
+      tipoComprobante: 'A',
+      puntoVenta: ''
+    });
+    
+  } catch (error) {
+    console.error('Error processing purchase:', error);
+    setError(isEditMode ? 'Error al actualizar la compra' : 'Error al registrar la compra');
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   // Función para exportar a Excel
   const exportToExcel = () => {
@@ -332,6 +393,42 @@ export default function Purchases() {
       setError('Error al exportar a Excel');
     }
   };
+
+  const handleEdit = (purchase: Purchase) => {
+  setEditingPurchase(purchase);
+  setIsEditMode(true);
+  setFormData({
+    providerId: '', // Necesitarías obtener el ID del proveedor
+    netoAmount: purchase.netoAmount.toString(),
+    ivaPercentage: ((purchase.ivaAmount / purchase.netoAmount) * 100).toString(),
+    otrosAmount: purchase.otrosAmount.toString(),
+    date: purchase.date,
+    product: purchase.product,
+    quantity: '1', // Podrías obtener esto de detalles_compra
+    comentarios: purchase.comentarios,
+    comprobante: purchase.comprobante,
+    tipoComprobante: purchase.tipoComprobante,
+    puntoVenta: purchase.puntoVenta
+  });
+};
+
+const handleDelete = async (purchaseId: string) => {
+  if (!confirm('¿Está seguro de eliminar esta compra?')) return;
+  
+  try {
+    const { error } = await supabase
+      .from('compras')
+      .update({ eliminado: true, fecha_eliminacion: new Date().toISOString() })
+      .eq('id', purchaseId);
+      
+    if (error) throw error;
+    
+    setPurchases(prev => prev.filter(p => p.id !== purchaseId));
+  } catch (error) {
+    console.error('Error deleting purchase:', error);
+    setError('Error al eliminar la compra');
+  }
+};
 
   return (
     <div className="space-y-6">
@@ -498,12 +595,32 @@ export default function Purchases() {
             
             <div className="col-span-1 sm:col-span-3">
               <Button 
-                className="w-full" 
-                onClick={handleSubmit}
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? 'Registrando...' : 'Registrar Compra'}
-              </Button>
+  className="w-full" 
+  onClick={handleSubmit}
+  disabled={isSubmitting}
+>
+  {isSubmitting 
+    ? (isEditMode ? 'Actualizando...' : 'Registrando...') 
+    : (isEditMode ? 'Actualizar Compra' : 'Registrar Compra')
+  }
+</Button>
+{isEditMode && (
+  <Button 
+    variant="outline" 
+    className="w-full mt-2" 
+    onClick={() => {
+      setIsEditMode(false);
+      setEditingPurchase(null);
+      setFormData({
+        providerId: '', netoAmount: '', ivaPercentage: '21', otrosAmount: '0',
+        date: '', product: '', quantity: '1', comentarios: '',
+        comprobante: '', tipoComprobante: 'A', puntoVenta: ''
+      });
+    }}
+  >
+    Cancelar Edición
+  </Button>
+)}
             </div>
           </div>
         </CardContent>
@@ -539,6 +656,7 @@ export default function Purchases() {
                   <TableHead>Total</TableHead>
                   <TableHead className="hidden lg:table-cell">Comentarios</TableHead>
                   <TableHead className="hidden sm:table-cell">Estado</TableHead>
+                  <TableHead>Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -556,6 +674,25 @@ export default function Purchases() {
                     <TableCell>${purchase.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</TableCell>
                     <TableCell className="hidden lg:table-cell">{purchase.comentarios}</TableCell>
                     <TableCell className="hidden sm:table-cell">{purchase.status}</TableCell>
+                    <TableCell>
+  <div className="flex gap-2">
+    <Button 
+      variant="ghost" 
+      size="sm" 
+      onClick={() => handleEdit(purchase)}
+    >
+      ✏️
+    </Button>
+    <Button 
+      variant="ghost" 
+      size="sm" 
+      onClick={() => handleDelete(purchase.id)}
+      className="text-red-600"
+    >
+      🗑️
+    </Button>
+  </div>
+</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
