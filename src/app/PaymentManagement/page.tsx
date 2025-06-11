@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client"
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,7 +32,6 @@ import {
   type ProveedorPayment,
   type CompraPayment,
   type OrdenPagoData,
-  type OrdenPagoDetalle
 } from "@/types/supabase";
 
 // Interfaces
