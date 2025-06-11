@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Loader2, Building2, Wallet } from "lucide-react";
+import { Search, Loader2, Building2, Wallet, Pencil, Trash2 } from "lucide-react";
 import { supabase } from "@/utils/supabase/client";
 import {
   Dialog,
@@ -56,6 +56,7 @@ interface NewMovementForm {
   tipo: "INGRESO" | "EGRESO";
   concepto: string;
   monto: number;
+  fecha_movimiento: string;  // Agregar esta línea
 }
 
 interface NewBankMovementForm {
@@ -64,12 +65,14 @@ interface NewBankMovementForm {
   monto: number;
   numero_operacion: string;
   detalle_gastos: string;
+  fecha_movimiento: string;  // Agregar esta línea
 }
 
 const initialFormState: NewMovementForm = {
   tipo: "INGRESO",
   concepto: "",
   monto: 0,
+  fecha_movimiento: new Date().toISOString().split('T')[0],
 };
 
 const initialBankFormState: NewBankMovementForm = {
@@ -78,7 +81,18 @@ const initialBankFormState: NewBankMovementForm = {
   monto: 0,
   numero_operacion: "",
   detalle_gastos: "",
+  fecha_movimiento: new Date().toISOString().split('T')[0],
 };
+
+interface EditMovementForm extends NewMovementForm {
+  id: string;
+  fecha_movimiento: string;
+}
+
+interface EditBankMovementForm extends NewBankMovementForm {
+  id: string;
+  fecha_movimiento: string;
+}
 
 const CashRegister: React.FC = () => {
   const [activeTab, setActiveTab] = useState("caja");
@@ -96,6 +110,12 @@ const CashRegister: React.FC = () => {
   const [currentBalance, setCurrentBalance] = useState(0);
   const [currentBankBalance, setCurrentBankBalance] = useState(0);
 
+  // Para la edicion
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isEditBankDialogOpen, setIsEditBankDialogOpen] = useState(false);
+  const [editFormData, setEditFormData] = useState<EditMovementForm | null>(null);
+  const [editBankFormData, setEditBankFormData] = useState<EditBankMovementForm | null>(null);
+
   // Obtener movimientos de caja
   const fetchMovimientos = async () => {
     setIsLoading(true);
@@ -105,6 +125,7 @@ const CashRegister: React.FC = () => {
       const { data, error } = await supabase
         .from("movimientos_caja")
         .select("*")
+        .eq('eliminado', false)  // Agregar esta línea
         .order("fecha_movimiento", { ascending: false });
 
       if (error) throw error;
@@ -163,23 +184,23 @@ const CashRegister: React.FC = () => {
     }
   };
 
-  // Manejar cambios en los inputs
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
+  // Modificar handleInputChange para incluir fecha_movimiento
+const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const { name, value } = e.target;
+  setFormData((prev) => ({
+    ...prev,
+    [name]: name === 'monto' ? Number(value) : value,
+  }));
+};
 
-  // Manejar cambios en los inputs del banco
-  const handleBankInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setBankFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
+  // Modificar handleBankInputChange para incluir fecha_movimiento
+const handleBankInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const { name, value } = e.target;
+  setBankFormData((prev) => ({
+    ...prev,
+    [name]: name === 'monto' ? Number(value) : value,
+  }));
+};
 
   // Manejar cambios en el select
   const handleSelectChange = (value: "INGRESO" | "EGRESO") => {
@@ -307,6 +328,163 @@ const CashRegister: React.FC = () => {
     }
   };
 
+  // Función para abrir edición de movimiento
+const handleEditMovement = (movimiento: MovimientoCaja) => {
+  setEditFormData({
+    id: movimiento.id,
+    tipo: movimiento.tipo,
+    concepto: movimiento.concepto,
+    monto: movimiento.monto,
+    fecha_movimiento: movimiento.fecha_movimiento.split('T')[0],
+  });
+  setIsEditDialogOpen(true);
+};
+
+const handleEditBankMovement = (movimiento: MovimientoBanco) => {
+  setEditBankFormData({
+    id: movimiento.id,
+    tipo: movimiento.tipo,
+    concepto: movimiento.concepto,
+    monto: movimiento.monto,
+    numero_operacion: movimiento.numero_operacion || "",
+    detalle_gastos: movimiento.detalle_gastos || "",
+    fecha_movimiento: movimiento.fecha_movimiento.split('T')[0],
+  });
+  setIsEditBankDialogOpen(true);
+};
+
+// Función para guardar edición
+const handleUpdateMovement = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!editFormData) return;
+  
+  setIsSubmitting(true);
+  setFormError(null);
+  
+  try {
+    const { error } = await supabase
+      .from("movimientos_caja")
+      .update({
+        tipo: editFormData.tipo,
+        concepto: editFormData.concepto,
+        monto: editFormData.monto,
+        fecha_movimiento: editFormData.fecha_movimiento,
+      })
+      .eq('id', editFormData.id);
+
+    if (error) throw error;
+    
+    fetchMovimientos();
+    fetchCurrentBalance();
+    setIsEditDialogOpen(false);
+    setEditFormData(null);
+  } catch (error) {
+  console.error("Error updating movement:", error);
+  setFormError("Error al actualizar el movimiento");
+} finally {
+    setIsSubmitting(false);
+  }
+};
+
+// Función para guardar edición bancaria
+const handleUpdateBankMovement = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!editBankFormData) return;
+  
+  setIsSubmitting(true);
+  setFormError(null);
+  
+  try {
+    const { error } = await supabase
+      .from("movimientos_banco")
+      .update({
+        tipo: editBankFormData.tipo,
+        concepto: editBankFormData.concepto,
+        monto: editBankFormData.monto,
+        numero_operacion: editBankFormData.numero_operacion,
+        detalle_gastos: editBankFormData.detalle_gastos,
+        fecha_movimiento: editBankFormData.fecha_movimiento,
+      })
+      .eq('id', editBankFormData.id);
+
+    if (error) throw error;
+    
+    fetchMovimientosBanco();
+    fetchCurrentBankBalance();
+    setIsEditBankDialogOpen(false);
+    setEditBankFormData(null);
+  } catch (error) {
+  console.error("Error updating bank movement:", error);
+  setFormError("Error al actualizar el movimiento");
+} finally {
+    setIsSubmitting(false);
+  }
+};
+
+// Función para eliminar movimiento
+const handleDeleteMovement = async (id: string) => {
+  if (!confirm('¿Está seguro de eliminar este movimiento?')) return;
+  
+  try {
+    const { error } = await supabase
+      .from("movimientos_caja")
+      .update({ 
+        eliminado: true, 
+        fecha_eliminacion: new Date().toISOString() 
+      })
+      .eq('id', id);
+
+    if (error) throw error;
+    
+    fetchMovimientos();
+    fetchCurrentBalance();
+  } catch (error) {
+  console.error("Error deleting movement:", error);
+  setError("Error al eliminar el movimiento");
+}
+};
+
+// Función para eliminar movimiento bancario
+const handleDeleteBankMovement = async (id: string) => {
+  if (!confirm('¿Está seguro de eliminar este movimiento?')) return;
+  
+  try {
+    const { error } = await supabase
+      .from("movimientos_banco")
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    
+    fetchMovimientosBanco();
+    fetchCurrentBankBalance();
+  } catch (error) {
+  console.error("Error deleting bank movement:", error);
+  setError("Error al eliminar el movimiento");
+}
+};
+
+// Agregar estos handlers para edición
+const handleEditInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const { name, value } = e.target;
+  if (editFormData) {
+    setEditFormData((prev) => prev ? ({
+      ...prev,
+      [name]: name === 'monto' ? Number(value) : value,
+    }) : null);
+  }
+};
+
+const handleEditBankInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const { name, value } = e.target;
+  if (editBankFormData) {
+    setEditBankFormData((prev) => prev ? ({
+      ...prev,
+      [name]: name === 'monto' ? Number(value) : value,
+    }) : null);
+  }
+};
+
   return (
     <div className="space-y-4">
       <Card>
@@ -364,6 +542,17 @@ const CashRegister: React.FC = () => {
                               <SelectItem value="EGRESO">Egreso</SelectItem>
                             </SelectContent>
                           </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="fecha">Fecha del Movimiento</Label>
+                          <Input
+                            id="fecha"
+                            name="fecha_movimiento"
+                            type="date"
+                            required
+                            value={formData.fecha_movimiento}
+                            onChange={handleInputChange}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="concepto">Concepto</Label>
@@ -437,6 +626,7 @@ const CashRegister: React.FC = () => {
                         <TableHead>Tipo</TableHead>
                         <TableHead>Concepto</TableHead>
                         <TableHead>Monto</TableHead>
+                        <TableHead>Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -454,6 +644,25 @@ const CashRegister: React.FC = () => {
                             {movimiento.concepto}
                           </TableCell>
                           <TableCell>${movimiento.monto.toLocaleString()}</TableCell>
+                          <TableCell>
+  <div className="flex gap-1">
+    <Button 
+      variant="ghost" 
+      size="sm" 
+      onClick={() => handleEditMovement(movimiento)}
+    >
+      <Pencil className="h-4 w-4" />
+    </Button>
+    <Button 
+      variant="ghost" 
+      size="sm" 
+      className="text-red-600"
+      onClick={() => handleDeleteMovement(movimiento.id)}
+    >
+      <Trash2 className="h-4 w-4" />
+    </Button>
+  </div>
+</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -507,6 +716,17 @@ const CashRegister: React.FC = () => {
                               <SelectItem value="GASTO_BANCARIO">Gasto Bancario</SelectItem>
                             </SelectContent>
                           </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="fecha">Fecha del Movimiento</Label>
+                          <Input
+                            id="fecha"
+                            name="fecha_movimiento"
+                            type="date"
+                            required
+                            value={formData.fecha_movimiento}
+                            onChange={handleInputChange}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="banco-concepto">Concepto</Label>
@@ -582,6 +802,210 @@ const CashRegister: React.FC = () => {
                     </DialogContent>
                   </Dialog>
                 </div>
+                {/* Dialog para Editar Movimiento de Caja */}
+<Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+  <DialogContent className="sm:max-w-md max-w-[95vw] p-4 sm:p-6">
+    <DialogHeader>
+      <DialogTitle>Editar Movimiento</DialogTitle>
+      <DialogDescription>
+        Modifique los datos del movimiento
+      </DialogDescription>
+    </DialogHeader>
+    {editFormData && (
+      <form onSubmit={handleUpdateMovement} className="space-y-4 mt-2">
+        <div className="space-y-2">
+          <Label htmlFor="edit-tipo-movimiento">Tipo de Movimiento</Label>
+          <Select
+            value={editFormData.tipo}
+            onValueChange={(value) => 
+              setEditFormData({...editFormData, tipo: value as "INGRESO" | "EGRESO"})
+            }
+          >
+            <SelectTrigger id="edit-tipo-movimiento" className="w-full">
+              <SelectValue placeholder="Seleccionar tipo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="INGRESO">Ingreso</SelectItem>
+              <SelectItem value="EGRESO">Egreso</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="edit-fecha">Fecha del Movimiento</Label>
+          <Input
+            id="edit-fecha"
+            name="fecha_movimiento"
+            type="date"
+            required
+            value={editFormData.fecha_movimiento}
+            onChange={handleEditInputChange}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="edit-concepto">Concepto</Label>
+          <Input
+            id="edit-concepto"
+            name="concepto"
+            required
+            value={editFormData.concepto}
+            onChange={handleEditInputChange}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="edit-monto">Monto</Label>
+          <Input
+            id="edit-monto"
+            name="monto"
+            type="number"
+            required
+            value={editFormData.monto}
+            onChange={handleEditInputChange}
+          />
+        </div>
+        {formError && (
+          <Alert variant="destructive">
+            <AlertDescription>{formError}</AlertDescription>
+          </Alert>
+        )}
+        <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-0 mt-4">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setIsEditDialogOpen(false)}
+            className="w-full sm:w-auto"
+          >
+            Cancelar
+          </Button>
+          <Button 
+            type="submit" 
+            disabled={isSubmitting}
+            className="w-full sm:w-auto"
+          >
+            {isSubmitting && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
+            Guardar Cambios
+          </Button>
+        </DialogFooter>
+      </form>
+    )}
+  </DialogContent>
+</Dialog>
+
+{/* Dialog para Editar Movimiento Bancario */}
+<Dialog open={isEditBankDialogOpen} onOpenChange={setIsEditBankDialogOpen}>
+  <DialogContent className="sm:max-w-md max-w-[95vw] p-4 sm:p-6">
+    <DialogHeader>
+      <DialogTitle>Editar Movimiento Bancario</DialogTitle>
+      <DialogDescription>
+        Modifique los datos del movimiento bancario
+      </DialogDescription>
+    </DialogHeader>
+    {editBankFormData && (
+      <form onSubmit={handleUpdateBankMovement} className="space-y-4 mt-2">
+        <div className="space-y-2">
+          <Label htmlFor="edit-banco-tipo-movimiento">Tipo de Movimiento</Label>
+          <Select
+            value={editBankFormData.tipo}
+            onValueChange={(value) => 
+              setEditBankFormData({...editBankFormData, tipo: value as "INGRESO" | "EGRESO" | "GASTO_BANCARIO"})
+            }
+          >
+            <SelectTrigger id="edit-banco-tipo-movimiento" className="w-full">
+              <SelectValue placeholder="Seleccionar tipo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="INGRESO">Ingreso</SelectItem>
+              <SelectItem value="EGRESO">Egreso</SelectItem>
+              <SelectItem value="GASTO_BANCARIO">Gasto Bancario</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="edit-banco-fecha">Fecha del Movimiento</Label>
+          <Input
+            id="edit-banco-fecha"
+            name="fecha_movimiento"
+            type="date"
+            required
+            value={editBankFormData.fecha_movimiento}
+            onChange={handleEditBankInputChange}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="edit-banco-concepto">Concepto</Label>
+          <Input
+            id="edit-banco-concepto"
+            name="concepto"
+            required
+            value={editBankFormData.concepto}
+            onChange={handleEditBankInputChange}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="edit-banco-monto">Monto</Label>
+          <Input
+            id="edit-banco-monto"
+            name="monto"
+            type="number"
+            required
+            value={editBankFormData.monto}
+            onChange={handleEditBankInputChange}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="edit-banco-operacion">Número de Operación</Label>
+          <Input
+            id="edit-banco-operacion"
+            name="numero_operacion"
+            value={editBankFormData.numero_operacion}
+            onChange={handleEditBankInputChange}
+            placeholder="Opcional"
+          />
+        </div>
+        {editBankFormData.tipo === "GASTO_BANCARIO" && (
+          <div className="space-y-2">
+            <Label htmlFor="edit-banco-detalle">Detalle de Gastos/Impuestos</Label>
+            <textarea
+              id="edit-banco-detalle"
+              name="detalle_gastos"
+              placeholder="Detalle los impuestos y gastos bancarios..."
+              value={editBankFormData.detalle_gastos}
+              onChange={handleEditBankInputChange}
+              className="w-full p-2 border border-gray-300 rounded-md min-h-[80px] resize-vertical"
+              rows={3}
+            />
+          </div>
+        )}
+        {formError && (
+          <Alert variant="destructive">
+            <AlertDescription>{formError}</AlertDescription>
+          </Alert>
+        )}
+        <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-0 mt-4">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setIsEditBankDialogOpen(false)}
+            className="w-full sm:w-auto"
+          >
+            Cancelar
+          </Button>
+          <Button 
+            type="submit" 
+            disabled={isSubmitting}
+            className="w-full sm:w-auto"
+          >
+            {isSubmitting && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
+            Guardar Cambios
+          </Button>
+        </DialogFooter>
+      </form>
+    )}
+  </DialogContent>
+</Dialog>
               </div>
               
               <div className="flex flex-col space-y-4">
@@ -605,6 +1029,7 @@ const CashRegister: React.FC = () => {
                         <TableHead>Concepto</TableHead>
                         <TableHead>Monto</TableHead>
                         <TableHead className="hidden md:table-cell">N° Operación</TableHead>
+                        <TableHead>Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -624,6 +1049,25 @@ const CashRegister: React.FC = () => {
                           <TableCell>${movimiento.monto.toLocaleString()}</TableCell>
                           <TableCell className="hidden md:table-cell">
                             {movimiento.numero_operacion || "-"}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-1">
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => handleEditBankMovement(movimiento)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="text-red-600"
+                                onClick={() => handleDeleteBankMovement(movimiento.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
