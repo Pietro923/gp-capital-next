@@ -5,6 +5,7 @@ import { User } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
 import { Download } from "lucide-react";
 
+
 // Tipos para los datos del informe
 interface InformeFinanciero {
   ingresosCaja: number;
@@ -1246,6 +1247,7 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
 
         {/* Tarjetas principales */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

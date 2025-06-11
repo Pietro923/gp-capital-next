@@ -26,6 +26,13 @@ import { Plus, DollarSign, FileText, AlertCircle, Download, Check, Clock, Eye } 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from '@/utils/supabase/client';
+import { 
+  obtenerPrimero,
+  type ProveedorPayment,
+  type CompraPayment,
+  type OrdenPagoData,
+  type OrdenPagoDetalle
+} from "@/types/supabase";
 
 // Interfaces
 interface Proveedor {
@@ -117,33 +124,33 @@ const PaymentManagement: React.FC = () => {
 
   // Cargar proveedores
   const loadProveedores = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('proveedores')
-        .select(`
-          id,
-          nombre,
-          cuit,
-          direccion,
-          telefono,
-          correo,
-          tipos_iva(nombre)
-        `)
-        .order('nombre');
+  try {
+    const { data, error } = await supabase
+      .from('proveedores')
+      .select(`
+        id,
+        nombre,
+        cuit,
+        direccion,
+        telefono,
+        correo,
+        tipos_iva(nombre)
+      `)
+      .order('nombre');
 
-      if (error) throw error;
+    if (error) throw error;
 
-      const proveedoresFormatted = data?.map(p => ({
-        ...p,
-        tipo_iva: p.tipos_iva?.[0]?.nombre
-      })) || [];
+    const proveedoresFormatted = (data as ProveedorPayment[])?.map(p => ({
+      ...p,
+      tipo_iva: obtenerPrimero(p.tipos_iva)?.nombre
+    })) || [];
 
-      setProveedores(proveedoresFormatted);
-    } catch (error) {
-      console.error('Error loading proveedores:', error);
-      setError('Error al cargar proveedores');
-    }
-  };
+    setProveedores(proveedoresFormatted);
+  } catch (error) {
+    console.error('Error loading proveedores:', error);
+    setError('Error al cargar proveedores');
+  }
+};
 
   // Cargar formas de pago
   const loadFormasPago = async () => {
@@ -182,17 +189,15 @@ const loadOrdenesPago = async () => {
 
     if (error) throw error;
 
-    const ordenesFormatted = data?.map(orden => ({
+    const ordenesFormatted = (data as OrdenPagoData[])?.map(orden => ({
       id: orden.id,
       numero_orden: orden.numero_orden,
-      // CORREGIDO: Acceder al primer elemento del array
-      proveedor_nombre: (orden.proveedores as any)?.nombre || '',
-      proveedor_cuit: (orden.proveedores as any)?.cuit || '',
+      proveedor_nombre: obtenerPrimero(orden.proveedores)?.nombre || '',
+      proveedor_cuit: obtenerPrimero(orden.proveedores)?.cuit || '',
       fecha_emision: orden.fecha_emision,
       monto_total: orden.monto_total,
       estado: orden.estado,
-      // CORREGIDO: Acceder al primer elemento del array
-      forma_pago_nombre: (orden.formas_pago as any)?.nombre || '',
+      forma_pago_nombre: obtenerPrimero(orden.formas_pago)?.nombre || '',
       numero_operacion: orden.numero_operacion,
       fecha_pago: orden.fecha_pago,
       observaciones: orden.observaciones
@@ -252,11 +257,10 @@ const loadOrdenesPago = async () => {
 
     if (error) throw error;
 
-    const comprasFormatted = data?.map(compra => ({
+    const comprasFormatted = (data as CompraPayment[])?.map(compra => ({
       ...compra,
       saldo_pendiente: compra.total_factura - compra.monto_pagado,
-      // CORREGIDO: 
-      forma_pago: (compra.formas_pago as any)?.nombre
+      forma_pago: obtenerPrimero(compra.formas_pago)?.nombre
     })) || [];
 
     setComprasProveedor(comprasFormatted);
@@ -430,8 +434,9 @@ const loadOrdenesPago = async () => {
       }
     }
 
-      // CORREGIDO: Registrar movimiento de egreso en caja
-    const proveedorNombre = (ordenData.proveedores as any)?.nombre || 'Proveedor desconocido';
+    // Registrar movimiento de egreso en caja - CORREGIDO con tipos
+    const proveedor = obtenerPrimero((ordenData as OrdenPagoDetalle).proveedores);
+    const proveedorNombre = proveedor?.nombre || 'Proveedor desconocido';
 
     const { error: movimientoError } = await supabase
       .from('movimientos_caja')
