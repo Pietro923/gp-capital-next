@@ -163,6 +163,9 @@ const Billing: React.FC = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingFactura, setEditingFactura] = useState<FacturaData | null>(null);
 
+  // Para manejar el editing
+  const [activeTab, setActiveTab] = useState<string>("nueva");
+
   // Cargar datos necesarios
   useEffect(() => {
   const fetchData = async () => {
@@ -653,7 +656,7 @@ const handleEdit = async (factura: FacturaData) => {
     // Llenar formulario con datos existentes
     setFormData({
       tipoFactura: factura.tipo_factura,
-      clienteId: factura.cliente_id,
+      clienteId: typeof factura.cliente_id === 'string' ? factura.cliente_id : factura.cliente_id.id, // ✅ Corrección aquí
       tipoIvaId: factura.tipo_iva_id,
       formaPagoId: factura.forma_pago_id,
       puntoVenta: factura.punto_venta || '0001',
@@ -667,12 +670,13 @@ const handleEdit = async (factura: FacturaData) => {
       quantity: detalle.cantidad,
       unitPrice: detalle.precio_unitario,
       netoAmount: detalle.cantidad * detalle.precio_unitario,
-      ivaPercentage: 21, // Calcular desde el IVA total si es necesario
+      ivaPercentage: 21,
       ivaAmount: detalle.subtotal - (detalle.cantidad * detalle.precio_unitario),
       total: detalle.subtotal
     })) || [];
     
     setItems(itemsFromDB);
+    setActiveTab("nueva");
     
   } catch (error) {
     console.error('Error loading factura for edit:', error);
@@ -706,18 +710,25 @@ const handleDelete = async (facturaId: string) => {
 
   return (
     <div className="container mx-auto p-4">
-      <Tabs defaultValue="nueva" className="w-full">
-        <TabsList className="mb-4">
-          <TabsTrigger value="nueva">Nueva Factura</TabsTrigger>
-          <TabsTrigger value="historial">Historial de Facturas</TabsTrigger>
-        </TabsList>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+  <TabsList className="mb-4">
+    <TabsTrigger value="nueva">Nueva Factura</TabsTrigger>
+    <TabsTrigger value="historial">Historial de Facturas</TabsTrigger>
+  </TabsList>
         
         <TabsContent value="nueva">
           <div className="grid gap-6">
             <Card>
               <CardHeader>
-                <CardTitle>Datos de Factura</CardTitle>
-                <CardDescription>Ingrese los datos básicos de la factura</CardDescription>
+                <CardTitle>
+  {isEditMode ? 'Editar Factura' : 'Datos de Factura'}
+</CardTitle>
+<CardDescription>
+  {isEditMode 
+    ? 'Modifique los datos de la factura seleccionada' 
+    : 'Ingrese los datos básicos de la factura'
+  }
+</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
