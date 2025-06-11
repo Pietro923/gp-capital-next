@@ -135,7 +135,7 @@ const PaymentManagement: React.FC = () => {
 
       const proveedoresFormatted = data?.map(p => ({
         ...p,
-        tipo_iva: p.tipos_iva?.nombre
+        tipo_iva: p.tipos_iva?.[0]?.nombre
       })) || [];
 
       setProveedores(proveedoresFormatted);
@@ -161,47 +161,49 @@ const PaymentManagement: React.FC = () => {
     }
   };
 
-  // Cargar órdenes de pago
-  const loadOrdenesPago = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('ordenes_pago')
-        .select(`
-          id,
-          numero_orden,
-          fecha_emision,
-          monto_total,
-          estado,
-          numero_operacion,
-          fecha_pago,
-          observaciones,
-          proveedores(nombre, cuit),
-          formas_pago(nombre)
-        `)
-        .order('fecha_emision', { ascending: false });
+  // Función loadOrdenesPago corregida
+const loadOrdenesPago = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('ordenes_pago')
+      .select(`
+        id,
+        numero_orden,
+        fecha_emision,
+        monto_total,
+        estado,
+        numero_operacion,
+        fecha_pago,
+        observaciones,
+        proveedores(nombre, cuit),
+        formas_pago(nombre)
+      `)
+      .order('fecha_emision', { ascending: false });
 
-      if (error) throw error;
+    if (error) throw error;
 
-      const ordenesFormatted = data?.map(orden => ({
-        id: orden.id,
-        numero_orden: orden.numero_orden,
-        proveedor_nombre: orden.proveedores?.nombre || '',
-        proveedor_cuit: orden.proveedores?.cuit || '',
-        fecha_emision: orden.fecha_emision,
-        monto_total: orden.monto_total,
-        estado: orden.estado,
-        forma_pago_nombre: orden.formas_pago?.nombre || '',
-        numero_operacion: orden.numero_operacion,
-        fecha_pago: orden.fecha_pago,
-        observaciones: orden.observaciones
-      })) || [];
+    const ordenesFormatted = data?.map(orden => ({
+      id: orden.id,
+      numero_orden: orden.numero_orden,
+      // CORREGIDO: Acceder al primer elemento del array
+      proveedor_nombre: (orden.proveedores as any)?.nombre || '',
+      proveedor_cuit: (orden.proveedores as any)?.cuit || '',
+      fecha_emision: orden.fecha_emision,
+      monto_total: orden.monto_total,
+      estado: orden.estado,
+      // CORREGIDO: Acceder al primer elemento del array
+      forma_pago_nombre: (orden.formas_pago as any)?.nombre || '',
+      numero_operacion: orden.numero_operacion,
+      fecha_pago: orden.fecha_pago,
+      observaciones: orden.observaciones
+    })) || [];
 
-      setOrdenesPago(ordenesFormatted);
-    } catch (error) {
-      console.error('Error loading órdenes de pago:', error);
-      setError('Error al cargar órdenes de pago');
-    }
-  };
+    setOrdenesPago(ordenesFormatted);
+  } catch (error) {
+    console.error('Error loading órdenes de pago:', error);
+    setError('Error al cargar órdenes de pago');
+  }
+};
 
   // Cargar estado de cuenta de proveedores usando la vista
   const loadEstadoCuentaProveedores = async () => {
@@ -230,38 +232,39 @@ const PaymentManagement: React.FC = () => {
   }, [selectedProveedor]);
 
   const loadComprasProveedor = async (proveedorId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('compras')
-        .select(`
-          id,
-          numero_factura,
-          fecha_compra,
-          total_factura,
-          monto_pagado,
-          estado_pago,
-          fecha_vencimiento,
-          formas_pago(nombre)
-        `)
-        .eq('proveedor_id', proveedorId)
-        .eq('eliminado', false)
-        .neq('estado_pago', 'PAGADO_TOTAL')
-        .order('fecha_compra', { ascending: false });
+  try {
+    const { data, error } = await supabase
+      .from('compras')
+      .select(`
+        id,
+        numero_factura,
+        fecha_compra,
+        total_factura,
+        monto_pagado,
+        estado_pago,
+        fecha_vencimiento,
+        formas_pago(nombre)
+      `)
+      .eq('proveedor_id', proveedorId)
+      .eq('eliminado', false)
+      .neq('estado_pago', 'PAGADO_TOTAL')
+      .order('fecha_compra', { ascending: false });
 
-      if (error) throw error;
+    if (error) throw error;
 
-      const comprasFormatted = data?.map(compra => ({
-        ...compra,
-        saldo_pendiente: compra.total_factura - compra.monto_pagado,
-        forma_pago: compra.formas_pago?.nombre
-      })) || [];
+    const comprasFormatted = data?.map(compra => ({
+      ...compra,
+      saldo_pendiente: compra.total_factura - compra.monto_pagado,
+      // CORREGIDO: 
+      forma_pago: (compra.formas_pago as any)?.nombre
+    })) || [];
 
-      setComprasProveedor(comprasFormatted);
-    } catch (error) {
-      console.error('Error loading compras proveedor:', error);
-      setError('Error al cargar compras del proveedor');
-    }
-  };
+    setComprasProveedor(comprasFormatted);
+  } catch (error) {
+    console.error('Error loading compras proveedor:', error);
+    setError('Error al cargar compras del proveedor');
+  }
+};
 
   const handleCheckboxChange = (compraId: string, checked: boolean) => {
     if (checked) {
@@ -363,103 +366,105 @@ const PaymentManagement: React.FC = () => {
   };
 
   const handleConfirmarPago = async () => {
-    if (!confirmForm.numeroOperacion || !confirmForm.fechaPago) {
-      setError('Debe completar todos los campos');
-      return;
-    }
+  if (!confirmForm.numeroOperacion || !confirmForm.fechaPago) {
+    setError('Debe completar todos los campos');
+    return;
+  }
 
-    setLoading(true);
-    setError(null);
+  setLoading(true);
+  setError(null);
 
-    try {
-      // Actualizar orden de pago a PAGADO
-      const { error: updateError } = await supabase
-        .from('ordenes_pago')
-        .update({
-          estado: 'PAGADO',
-          fecha_pago: confirmForm.fechaPago,
-          numero_operacion: confirmForm.numeroOperacion
-        })
-        .eq('id', selectedOrdenPago);
+  try {
+    // Actualizar orden de pago a PAGADO
+    const { error: updateError } = await supabase
+      .from('ordenes_pago')
+      .update({
+        estado: 'PAGADO',
+        fecha_pago: confirmForm.fechaPago,
+        numero_operacion: confirmForm.numeroOperacion
+      })
+      .eq('id', selectedOrdenPago);
 
-      if (updateError) throw updateError;
+    if (updateError) throw updateError;
 
-      // Obtener las compras relacionadas y la orden
-      const { data: ordenData, error: ordenError } = await supabase
-        .from('ordenes_pago')
-        .select(`
-          monto_total,
-          numero_orden,
-          proveedores(nombre),
-          orden_pago_compras(compra_id, monto_asignado)
-        `)
-        .eq('id', selectedOrdenPago)
-        .single();
+    // Obtener las compras relacionadas y la orden
+    const { data: ordenData, error: ordenError } = await supabase
+      .from('ordenes_pago')
+      .select(`
+        monto_total,
+        numero_orden,
+        proveedores(nombre),
+        orden_pago_compras(compra_id, monto_asignado)
+      `)
+      .eq('id', selectedOrdenPago)
+      .single();
 
-      if (ordenError) throw ordenError;
+    if (ordenError) throw ordenError;
 
-      // Actualizar montos pagados en las compras
-      if (ordenData.orden_pago_compras) {
-        for (const relacion of ordenData.orden_pago_compras) {
-          const { error: compraError } = await supabase.rpc('actualizar_monto_pagado_compra', {
-            compra_id: relacion.compra_id,
-            monto_adicional: relacion.monto_asignado
-          });
+    // Actualizar montos pagados en las compras
+    if (ordenData.orden_pago_compras) {
+      for (const relacion of ordenData.orden_pago_compras) {
+        const { error: compraError } = await supabase.rpc('actualizar_monto_pagado_compra', {
+          compra_id: relacion.compra_id,
+          monto_adicional: relacion.monto_asignado
+        });
 
-          if (compraError) {
-            console.error('Error updating compra:', compraError);
-            // Actualización manual si la función RPC no existe
-            const { data: compraActual, error: getCompraError } = await supabase
+        if (compraError) {
+          console.error('Error updating compra:', compraError);
+          // Actualización manual si la función RPC no existe
+          const { data: compraActual, error: getCompraError } = await supabase
+            .from('compras')
+            .select('monto_pagado')
+            .eq('id', relacion.compra_id)
+            .single();
+
+          if (!getCompraError && compraActual) {
+            await supabase
               .from('compras')
-              .select('monto_pagado')
-              .eq('id', relacion.compra_id)
-              .single();
-
-            if (!getCompraError && compraActual) {
-              await supabase
-                .from('compras')
-                .update({
-                  monto_pagado: compraActual.monto_pagado + relacion.monto_asignado
-                })
-                .eq('id', relacion.compra_id);
-            }
+              .update({
+                monto_pagado: compraActual.monto_pagado + relacion.monto_asignado
+              })
+              .eq('id', relacion.compra_id);
           }
         }
       }
-
-      // Registrar movimiento de egreso en caja
-      const { error: movimientoError } = await supabase
-        .from('movimientos_caja')
-        .insert({
-          tipo: 'EGRESO',
-          concepto: `Pago a proveedor ${ordenData.proveedores?.nombre} - Orden ${ordenData.numero_orden}`,
-          monto: ordenData.monto_total,
-          fecha_movimiento: confirmForm.fechaPago
-        });
-
-      if (movimientoError) {
-        console.error('Error creating movimento caja:', movimientoError);
-        // No fallar por esto, solo logear
-      }
-
-      setSuccess('Pago confirmado exitosamente');
-      setIsConfirmDialogOpen(false);
-      setConfirmForm({
-        numeroOperacion: '',
-        fechaPago: new Date().toISOString().split('T')[0]
-      });
-      
-      // Recargar datos
-      loadOrdenesPago();
-      loadEstadoCuentaProveedores();
-
-    } catch (error) {
-      console.error('Error confirming payment:', error);
-      setError('Error al confirmar el pago');
-    } finally {
-      setLoading(false);
     }
-  };
+
+      // CORREGIDO: Registrar movimiento de egreso en caja
+    const proveedorNombre = (ordenData.proveedores as any)?.nombre || 'Proveedor desconocido';
+
+    const { error: movimientoError } = await supabase
+      .from('movimientos_caja')
+      .insert({
+        tipo: 'EGRESO',
+        concepto: `Pago a proveedor ${proveedorNombre} - Orden ${ordenData.numero_orden}`,
+        monto: ordenData.monto_total,
+        fecha_movimiento: confirmForm.fechaPago
+      });
+
+    if (movimientoError) {
+      console.error('Error creating movimento caja:', movimientoError);
+      // No fallar por esto, solo logear
+    }
+
+    setSuccess('Pago confirmado exitosamente');
+    setIsConfirmDialogOpen(false);
+    setConfirmForm({
+      numeroOperacion: '',
+      fechaPago: new Date().toISOString().split('T')[0]
+    });
+    
+    // Recargar datos
+    loadOrdenesPago();
+    loadEstadoCuentaProveedores();
+
+  } catch (error) {
+    console.error('Error confirming payment:', error);
+    setError('Error al confirmar el pago');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const getEstadoColor = (estado: string) => {
     switch (estado) {
