@@ -156,49 +156,49 @@ const InvoiceCollections: React.FC = () => {
   const loadCobros = async () => {
     try {
       const { data, error } = await supabase
-        .from('cobros')
-        .select(`
+  .from('cobros')
+  .select(`
+    id,
+    numero_recibo,
+    factura_id,
+    fecha_cobro,
+    monto_cobrado,
+    numero_operacion,
+    observaciones,
+    facturacion (
+      numero_factura,
+      tipo_factura,
+      clientes (
         id,
-        numero_recibo,
-        factura_id,
-        fecha_cobro,
-        monto_cobrado,
-        numero_operacion,
-        observaciones,
-        facturacion!inner (
-            numero_factura,
-            tipo_factura,
-            clientes (
-            id,
-            nombre,
-            apellido,
-            dni,
-            cuit,
-            tipo_cliente,
-            empresa
-            )
-        ),
-        formas_pago (nombre)
-        `)
-        .order('fecha_cobro', { ascending: false });
+        nombre,
+        apellido,
+        dni,
+        cuit,
+        tipo_cliente,
+        empresa
+      )
+    ),
+    formas_pago (nombre)
+  `)
+  .order('fecha_cobro', { ascending: false });
 
       if (error) throw error;
 
       const cobrosFormatted = data?.map(cobro => ({
-        id: cobro.id,
-        numero_recibo: cobro.numero_recibo,
-        factura_id: cobro.factura_id,
-        factura: {
-        numero_factura: cobro.facturacion?.map(f => f.numero_factura).join(', ') || '',
-tipo_factura: cobro.facturacion?.map(f => f.tipo_factura).join(', ') || '',
-cliente: cobro.facturacion?.map(f => f.clientes?.[0]).filter(Boolean)[0] || {} as Cliente
-        },
-        fecha_cobro: cobro.fecha_cobro,
-        monto_cobrado: cobro.monto_cobrado,
-        forma_cobro: { nombre: cobro.formas_pago?.map(f => f.nombre).join(', ') || '' },
-        numero_operacion: cobro.numero_operacion,
-        observaciones: cobro.observaciones
-      })) || [];
+  id: cobro.id,
+  numero_recibo: cobro.numero_recibo,
+  factura_id: cobro.factura_id,
+  factura: {
+    numero_factura: (cobro.facturacion as any)?.numero_factura || '',
+    tipo_factura: (cobro.facturacion as any)?.tipo_factura || '',
+    cliente: (cobro.facturacion as any)?.clientes || {} as Cliente
+  },
+  fecha_cobro: cobro.fecha_cobro,
+  monto_cobrado: cobro.monto_cobrado,
+  forma_cobro: { nombre: (cobro.formas_pago as any)?.nombre || '' },
+  numero_operacion: cobro.numero_operacion,
+  observaciones: cobro.observaciones
+})) || [];
 
       setCobros(cobrosFormatted);
     } catch (error) {
