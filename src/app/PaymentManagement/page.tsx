@@ -102,6 +102,12 @@ const PaymentManagement: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   
+  // Para las acciones:
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [selectedOrdenDetalle, setSelectedOrdenDetalle] = useState<OrdenPago | null>(null);
+  const [ordenDetalles, setOrdenDetalles] = useState<any[]>([]); 
+
+
   const [pagoForm, setPagoForm] = useState({
     formaPagoId: '',
     numeroOperacion: '',
@@ -252,7 +258,7 @@ const loadOrdenesPago = async () => {
       `)
       .eq('proveedor_id', proveedorId)
       .eq('eliminado', false)
-      .neq('estado_pago', 'PAGADO_TOTAL')
+     .in('estado_pago', ['PENDIENTE', 'PAGADO_PARCIAL'])
       .order('fecha_compra', { ascending: false });
 
     if (error) throw error;
@@ -374,11 +380,11 @@ const loadOrdenesPago = async () => {
     setError('Debe completar todos los campos');
     return;
   }
-
   setLoading(true);
   setError(null);
-
   try {
+    console.log('🔍 Confirmando pago para orden:', selectedOrdenPago);
+    
     // Actualizar orden de pago a PAGADO
     const { error: updateError } = await supabase
       .from('ordenes_pago')
@@ -390,67 +396,132 @@ const loadOrdenesPago = async () => {
       .eq('id', selectedOrdenPago);
 
     if (updateError) throw updateError;
+    console.log('✅ Orden actualizada a PAGADO');
 
-    // Obtener las compras relacionadas y la orden
-    const { data: ordenData, error: ordenError } = await supabase
-      .from('ordenes_pago')
-      .select(`
-        monto_total,
-        numero_orden,
-        proveedores(nombre),
-        orden_pago_compras(compra_id, monto_asignado)
-      `)
-      .eq('id', selectedOrdenPago)
-      .single();
+    // Obtener las compras relacionadas con la orden
+    const { data: relacionesCompras, error: relacionesError } = await supabase
+      .from('orden_pago_compras')
+      .select('compra_id, monto_asignado')
+      .eq('orden_pago_id', selectedOrdenPago);
 
-    if (ordenError) throw ordenError;
+    if (relacionesError) throw relacionesError;
+    console.log('🔍 Relaciones encontradas:', relacionesCompras);
 
-    // Actualizar montos pagados en las compras
-    if (ordenData.orden_pago_compras) {
-      for (const relacion of ordenData.orden_pago_compras) {
-        const { error: compraError } = await supabase.rpc('actualizar_monto_pagado_compra', {
-          compra_id: relacion.compra_id,
-          monto_adicional: relacion.monto_asignado
+    // **CAMBIO CRÍTICO:** Actualizar cada compra individualmente
+    if (relacionesCompras && relacionesCompras.length > 0) {
+      for (const relacion of relacionesCompras) {
+        console.log(`🔍 Procesando compra: ${relacion.compra_id}, monto: ${relacion.monto_asignado}`);
+        
+        // **PASO 1:** Obtener datos actuales de la compra
+        const { data: compraActual, error: getCompraError } = await supabase
+          .from('compras')
+          .select('monto_pagado, total_factura, estado_pago')
+          .eq('id', relacion.compra_id)
+          .single();
+
+        if (getCompraError) {
+          console.error('❌ Error obteniendo compra:', getCompraError);
+          throw getCompraError;
+        }
+        
+        console.log('🔍 Estado ANTES:', {
+          monto_pagado_actual: compraActual.monto_pagado,
+          monto_a_sumar: relacion.monto_asignado,
+          total_factura: compraActual.total_factura,
+          estado_actual: compraActual.estado_pago
         });
 
-        if (compraError) {
-          console.error('Error updating compra:', compraError);
-          // Actualización manual si la función RPC no existe
-          const { data: compraActual, error: getCompraError } = await supabase
-            .from('compras')
-            .select('monto_pagado')
-            .eq('id', relacion.compra_id)
-            .single();
-
-          if (!getCompraError && compraActual) {
-            await supabase
-              .from('compras')
-              .update({
-                monto_pagado: compraActual.monto_pagado + relacion.monto_asignado
-              })
-              .eq('id', relacion.compra_id);
-          }
+        // **PASO 2:** Calcular nuevos valores
+        const nuevoMontoPagado = Number(compraActual.monto_pagado) + Number(relacion.monto_asignado);
+        const totalFactura = Number(compraActual.total_factura);
+        
+        let nuevoEstado = 'PENDIENTE';
+        if (nuevoMontoPagado >= totalFactura) {
+          nuevoEstado = 'PAGADO_TOTAL';
+        } else if (nuevoMontoPagado > 0) {
+          nuevoEstado = 'PAGADO_PARCIAL';
         }
+
+        console.log('🔍 Estado DESPUÉS:', {
+          nuevo_monto_pagado: nuevoMontoPagado,
+          nuevo_estado: nuevoEstado,
+          diferencia: nuevoMontoPagado - totalFactura
+        });
+
+        // **PASO 3:** Actualizar la compra con valores explícitos
+        const { data: compraActualizada, error: updateCompraError } = await supabase
+          .from('compras')
+          .update({
+            monto_pagado: nuevoMontoPagado,
+            estado_pago: nuevoEstado
+          })
+          .eq('id', relacion.compra_id)
+          .select('monto_pagado, estado_pago')
+          .single();
+
+        if (updateCompraError) {
+          console.error('❌ Error actualizando compra:', updateCompraError);
+          throw updateCompraError;
+        }
+        
+        console.log('✅ Compra actualizada a:', compraActualizada);
       }
     }
 
-    // Registrar movimiento de egreso en caja - CORREGIDO con tipos
-    const proveedor = obtenerPrimero((ordenData as OrdenPagoDetalle).proveedores);
-    const proveedorNombre = proveedor?.nombre || 'Proveedor desconocido';
+    // Registrar movimiento de egreso - CORREGIDO para manejar transferencias
+const { data: ordenData, error: ordenError } = await supabase
+  .from('ordenes_pago')
+  .select(`
+    monto_total,
+    numero_orden,
+    proveedores(nombre),
+    formas_pago(nombre)
+  `)
+  .eq('id', selectedOrdenPago)
+  .single();
 
-    const { error: movimientoError } = await supabase
-      .from('movimientos_caja')
-      .insert({
-        tipo: 'EGRESO',
-        concepto: `Pago a proveedor ${proveedorNombre} - Orden ${ordenData.numero_orden}`,
-        monto: ordenData.monto_total,
-        fecha_movimiento: confirmForm.fechaPago
-      });
+if (ordenError) throw ordenError;
 
-    if (movimientoError) {
-      console.error('Error creating movimento caja:', movimientoError);
-      // No fallar por esto, solo logear
-    }
+const proveedor = obtenerPrimero(ordenData.proveedores);
+const proveedorNombre = proveedor?.nombre || 'Proveedor desconocido';
+const formaPago = obtenerPrimero(ordenData.formas_pago);
+const formaPagoNombre = formaPago?.nombre || '';
+
+// Determinar si es transferencia bancaria o efectivo
+const esTransferenciaBancaria = formaPagoNombre.toLowerCase().includes('transferencia') || 
+                              formaPagoNombre.toLowerCase().includes('bancaria') ||
+                              formaPagoNombre.toLowerCase().includes('banco');
+
+if (esTransferenciaBancaria) {
+  // Registrar en movimientos bancarios
+  const { error: movimientoError } = await supabase
+    .from('movimientos_banco')
+    .insert({
+      tipo: 'EGRESO',
+      concepto: `Pago a proveedor ${proveedorNombre} - Orden ${ordenData.numero_orden}`,
+      monto: ordenData.monto_total,
+      numero_operacion: confirmForm.numeroOperacion,
+      fecha_movimiento: confirmForm.fechaPago
+    });
+
+  if (movimientoError) {
+    console.error('Error creating movimento banco:', movimientoError);
+  }
+} else {
+  // Registrar en movimientos de caja (efectivo)
+  const { error: movimientoError } = await supabase
+    .from('movimientos_caja')
+    .insert({
+      tipo: 'EGRESO',
+      concepto: `Pago a proveedor ${proveedorNombre} - Orden ${ordenData.numero_orden}`,
+      monto: ordenData.monto_total,
+      fecha_movimiento: confirmForm.fechaPago
+    });
+
+  if (movimientoError) {
+    console.error('Error creating movimento caja:', movimientoError);
+  }
+}
 
     setSuccess('Pago confirmado exitosamente');
     setIsConfirmDialogOpen(false);
@@ -459,13 +530,21 @@ const loadOrdenesPago = async () => {
       fechaPago: new Date().toISOString().split('T')[0]
     });
     
-    // Recargar datos
-    loadOrdenesPago();
-    loadEstadoCuentaProveedores();
-
+    console.log('🔄 Recargando datos...');
+    
+    // Esperar un poco antes de recargar para asegurar que la BD se actualice
+    setTimeout(async () => {
+      await loadOrdenesPago();
+      await loadEstadoCuentaProveedores();
+      if (selectedProveedor) {
+        await loadComprasProveedor(selectedProveedor);
+      }
+      console.log('✅ Datos recargados');
+    }, 500);
+    
   } catch (error) {
-    console.error('Error confirming payment:', error);
-    setError('Error al confirmar el pago');
+    console.error('❌ Error confirming payment:', error);
+    setError(`Error al confirmar el pago: ${error instanceof Error ? error.message : 'Error desconocido'}`);
   } finally {
     setLoading(false);
   }
@@ -500,6 +579,97 @@ const loadOrdenesPago = async () => {
     setError(null);
     setSuccess(null);
   };
+
+  // Función para cargar detalles de una orden de pago
+const loadOrdenDetalles = async (ordenId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('orden_pago_compras')
+      .select(`
+        monto_asignado,
+        compras(
+          numero_factura,
+          fecha_compra,
+          total_factura,
+          tipo_factura
+        )
+      `)
+      .eq('orden_pago_id', ordenId);
+
+    if (error) throw error;
+    setOrdenDetalles(data || []);
+  } catch (error) {
+    console.error('Error loading orden detalles:', error);
+    setError('Error al cargar detalles de la orden');
+  }
+};
+
+// Función para abrir modal de ver detalles
+const handleVerDetalle = async (orden: OrdenPago) => {
+  setSelectedOrdenDetalle(orden);
+  await loadOrdenDetalles(orden.id);
+  setIsViewDialogOpen(true);
+};
+
+// Función para exportar orden de pago
+const exportarOrdenPago = async (orden: OrdenPago) => {
+  try {
+    // Cargar detalles de la orden
+    const { data: detalles, error } = await supabase
+      .from('orden_pago_compras')
+      .select(`
+        monto_asignado,
+        compras(
+          numero_factura,
+          fecha_compra,
+          total_factura,
+          tipo_factura
+        )
+      `)
+      .eq('orden_pago_id', orden.id);
+
+    if (error) throw error;
+
+    // Crear contenido del archivo
+    const ordenData = `
+ORDEN DE PAGO
+N° ${orden.numero_orden}
+
+Proveedor: ${orden.proveedor_nombre}
+CUIT: ${orden.proveedor_cuit}
+Fecha de Emisión: ${formatDate(orden.fecha_emision)}
+${orden.fecha_pago ? `Fecha de Pago: ${formatDate(orden.fecha_pago)}` : ''}
+Forma de Pago: ${orden.forma_pago_nombre}
+${orden.numero_operacion ? `N° Operación: ${orden.numero_operacion}` : ''}
+Estado: ${orden.estado}
+
+DETALLE DE FACTURAS:
+${detalles?.map((detalle: any) => 
+  `- Factura: ${detalle.compras?.numero_factura} | Tipo: ${detalle.compras?.tipo_factura} | Fecha: ${detalle.compras?.fecha_compra ? formatDate(detalle.compras.fecha_compra) : 'N/A'} | Monto: ${formatCurrency(detalle.monto_asignado)}`
+).join('\n') || 'Sin detalles disponibles'}
+
+MONTO TOTAL: ${formatCurrency(orden.monto_total)}
+
+${orden.observaciones ? `Observaciones: ${orden.observaciones}` : ''}
+
+Fecha de emisión del reporte: ${formatDate(new Date().toISOString())}
+    `;
+
+    // Crear y descargar archivo
+    const blob = new Blob([ordenData], { type: 'text/plain;charset=utf-8' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Orden_Pago_${orden.numero_orden}.txt`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Error exporting orden:', error);
+    setError('Error al exportar la orden de pago');
+  }
+};
 
   return (
     <div className="space-y-6">
@@ -694,27 +864,38 @@ const loadOrdenesPago = async () => {
                                 </Badge>
                               </TableCell>
                               <TableCell>
-                                <div className="flex gap-2">
-                                  <Button variant="ghost" size="sm">
-                                    <Eye className="h-4 w-4" />
-                                  </Button>
-                                  <Button variant="ghost" size="sm">
-                                    <Download className="h-4 w-4" />
-                                  </Button>
-                                  {orden.estado === 'PENDIENTE' && (
-                                    <Button 
-                                      variant="ghost" 
-                                      size="sm"
-                                      onClick={() => {
-                                        setSelectedOrdenPago(orden.id);
-                                        setIsConfirmDialogOpen(true);
-                                      }}
-                                    >
-                                      <Check className="h-4 w-4" />
-                                    </Button>
-                                  )}
-                                </div>
-                              </TableCell>
+  <div className="flex gap-2">
+    <Button 
+      variant="ghost" 
+      size="sm"
+      onClick={() => handleVerDetalle(orden)}
+      title="Ver detalles"
+    >
+      <Eye className="h-4 w-4" />
+    </Button>
+    <Button 
+      variant="ghost" 
+      size="sm"
+      onClick={() => exportarOrdenPago(orden)}
+      title="Descargar orden"
+    >
+      <Download className="h-4 w-4" />
+    </Button>
+    {orden.estado === 'PENDIENTE' && (
+      <Button 
+        variant="ghost" 
+        size="sm"
+        onClick={() => {
+          setSelectedOrdenPago(orden.id);
+          setIsConfirmDialogOpen(true);
+        }}
+        title="Confirmar pago"
+      >
+        <Check className="h-4 w-4" />
+      </Button>
+    )}
+  </div>
+</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -887,6 +1068,120 @@ const loadOrdenesPago = async () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog para Ver Detalles de Orden */}
+<Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+  <DialogContent className="sm:max-w-2xl">
+    <DialogHeader>
+      <DialogTitle>Detalles de Orden de Pago</DialogTitle>
+      <DialogDescription>
+        Información completa de la orden seleccionada
+      </DialogDescription>
+    </DialogHeader>
+    
+    {selectedOrdenDetalle && (
+      <div className="space-y-4">
+        {/* Información general */}
+        <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+          <div>
+            <Label className="text-sm text-gray-600">N° Orden</Label>
+            <p className="font-medium">{selectedOrdenDetalle.numero_orden}</p>
+          </div>
+          <div>
+            <Label className="text-sm text-gray-600 p-3">Estado</Label>
+            <Badge className={getEstadoColor(selectedOrdenDetalle.estado)}>
+              {selectedOrdenDetalle.estado}
+            </Badge>
+          </div>
+          <div>
+            <Label className="text-sm text-gray-600">Proveedor</Label>
+            <p className="font-medium">{selectedOrdenDetalle.proveedor_nombre}</p>
+            <p className="text-sm text-gray-500">{selectedOrdenDetalle.proveedor_cuit}</p>
+          </div>
+          <div>
+            <Label className="text-sm text-gray-600">Monto Total</Label>
+            <p className="font-medium text-lg">{formatCurrency(selectedOrdenDetalle.monto_total)}</p>
+          </div>
+          <div>
+            <Label className="text-sm text-gray-600">Fecha Emisión</Label>
+            <p>{formatDate(selectedOrdenDetalle.fecha_emision)}</p>
+          </div>
+          <div>
+            <Label className="text-sm text-gray-600">Forma de Pago</Label>
+            <p>{selectedOrdenDetalle.forma_pago_nombre}</p>
+          </div>
+          {selectedOrdenDetalle.fecha_pago && (
+            <div>
+              <Label className="text-sm text-gray-600">Fecha Pago</Label>
+              <p>{formatDate(selectedOrdenDetalle.fecha_pago)}</p>
+            </div>
+          )}
+          {selectedOrdenDetalle.numero_operacion && (
+            <div>
+              <Label className="text-sm text-gray-600">N° Operación</Label>
+              <p>{selectedOrdenDetalle.numero_operacion}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Facturas incluidas */}
+        <div>
+          <Label className="text-lg font-semibold">Facturas Incluidas</Label>
+          <div className="mt-2 rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>N° Factura</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead className="text-right">Monto Asignado</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {ordenDetalles.map((detalle, index) => (
+                  <TableRow key={index}>
+                    <TableCell className="font-medium">
+                      {detalle.compras?.numero_factura || 'N/A'}
+                    </TableCell>
+                    <TableCell>{detalle.compras?.tipo_factura || 'N/A'}</TableCell>
+                    <TableCell>
+                      {detalle.compras?.fecha_compra ? formatDate(detalle.compras.fecha_compra) : 'N/A'}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(detalle.monto_asignado)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+
+        {/* Observaciones */}
+        {selectedOrdenDetalle.observaciones && (
+          <div>
+            <Label className="text-sm text-gray-600">Observaciones</Label>
+            <p className="mt-1 p-2 bg-gray-50 rounded border text-sm">
+              {selectedOrdenDetalle.observaciones}
+            </p>
+          </div>
+        )}
+      </div>
+    )}
+    
+    <DialogFooter>
+      <Button variant="outline" onClick={() => setIsViewDialogOpen(false)}>
+        Cerrar
+      </Button>
+      {selectedOrdenDetalle && (
+        <Button onClick={() => exportarOrdenPago(selectedOrdenDetalle)}>
+          <Download className="h-4 w-4 mr-2" />
+          Descargar
+        </Button>
+      )}
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
     </div>
   );
 };
