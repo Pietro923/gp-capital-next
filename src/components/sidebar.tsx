@@ -76,11 +76,16 @@ const sections: Section[] = [
       { id: "facturacion", name: "Facturación", icon: Receipt, href: "/Billing" },
       { id: "compras", name: "Compras", icon: ShoppingCart, href: "/Purchases" },
       { id: "caja", name: "Caja", icon: DollarSign, href: "/CashRegister" },
-      { id: "pagos", name: "Gestión de Pagos", icon: BookOpenCheck, href: "/PaymentManagement" },
-      { id: "cobros", name: " Gestión de Cobros", icon: SquareLibrary, href: "/InvoiceCollections" },
-
     ]
   },
+  {
+    id: "management",
+    title: "Gestion",
+    items: [
+      { id: "pagos", name: "Gestión de Pagos", icon: BookOpenCheck, href: "/PaymentManagement" },
+      { id: "cobros", name: " Gestión de Cobros", icon: SquareLibrary, href: "/InvoiceCollections" },
+      ]
+    }
 ];
 
 const Sidebar = () => {
