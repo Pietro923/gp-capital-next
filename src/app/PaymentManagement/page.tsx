@@ -112,7 +112,8 @@ const PaymentManagement: React.FC = () => {
     formaPagoId: '',
     numeroOperacion: '',
     observaciones: '',
-    fechaPago: new Date().toISOString().split('T')[0]
+    fechaPago: new Date().toISOString().split('T')[0],
+    montoParcial: 0  // AGREGAR ESTE CAMPO
   });
 
   const [confirmForm, setConfirmForm] = useState({
@@ -291,89 +292,104 @@ const loadOrdenesPago = async () => {
   };
 
   const handleGenerarOrdenPago = async () => {
-    if (selectedCompras.length === 0 || !pagoForm.formaPagoId) {
-      setError('Debe seleccionar al menos una factura y una forma de pago');
-      return;
+  if (selectedCompras.length === 0 || !pagoForm.formaPagoId) {
+    setError('Debe seleccionar al menos una factura y una forma de pago');
+    return;
+  }
+
+  // NUEVA VALIDACIÓN: No permitir pago parcial para múltiples facturas
+  if (selectedCompras.length > 1 && pagoForm.montoParcial > 0) {
+    setError('No se puede hacer pago parcial para múltiples facturas');
+    return;
+  }
+
+  setLoading(true);
+  setError(null);
+  setSuccess(null);
+
+  try {
+    // Generar número de orden
+    const { data: ordenesCount, error: countError } = await supabase
+      .from('ordenes_pago')
+      .select('id', { count: 'exact' })
+      .like('numero_orden', `OP-${new Date().getFullYear()}-%`);
+    if (countError) throw countError;
+
+    const numeroOrden = `OP-${new Date().getFullYear()}-${String((ordenesCount?.length || 0) + 1).padStart(3, '0')}`;
+
+    // MODIFICAR: Calcular monto total considerando pago parcial
+    let montoTotal;
+    if (selectedCompras.length === 1 && pagoForm.montoParcial > 0) {
+      montoTotal = pagoForm.montoParcial;
+    } else {
+      montoTotal = calcularTotalSeleccionado();
     }
 
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
+    // Crear orden de pago
+    const { data: ordenCreada, error: ordenError } = await supabase
+      .from('ordenes_pago')
+      .insert({
+        proveedor_id: selectedProveedor,
+        numero_orden: numeroOrden,
+        fecha_emision: pagoForm.fechaPago,
+        forma_pago_id: pagoForm.formaPagoId,
+        monto_total: montoTotal,
+        estado: 'PENDIENTE',
+        observaciones: pagoForm.observaciones,
+        numero_operacion: pagoForm.numeroOperacion,
+        fecha_pago: pagoForm.fechaPago
+      })
+      .select()
+      .single();
 
-    try {
-      // Generar número de orden
-      const { data: ordenesCount, error: countError } = await supabase
-        .from('ordenes_pago')
-        .select('id', { count: 'exact' })
-        .like('numero_orden', `OP-${new Date().getFullYear()}-%`);
+    if (ordenError) throw ordenError;
 
-      if (countError) throw countError;
+    // MODIFICAR: Relacionar compras con montos específicos
+    const relacionesCompras = [];
+    for (const compraId of selectedCompras) {
+      const compra = comprasProveedor.find(c => c.id === compraId);
+      if (compra) {
+        // Usar monto parcial si es pago parcial, sino el saldo completo
+        const montoAsignado = selectedCompras.length === 1 && pagoForm.montoParcial > 0 
+          ? pagoForm.montoParcial 
+          : compra.saldo_pendiente;
 
-      const numeroOrden = `OP-${new Date().getFullYear()}-${String((ordenesCount?.length || 0) + 1).padStart(3, '0')}`;
-
-      // Calcular monto total
-      const montoTotal = calcularTotalSeleccionado();
-
-      // Crear orden de pago
-      const { data: ordenCreada, error: ordenError } = await supabase
-        .from('ordenes_pago')
-        .insert({
-          proveedor_id: selectedProveedor,
-          numero_orden: numeroOrden,
-          fecha_emision: pagoForm.fechaPago,
-          forma_pago_id: pagoForm.formaPagoId,
-          monto_total: montoTotal,
-          estado: 'PENDIENTE',
-          observaciones: pagoForm.observaciones,
-          numero_operacion: pagoForm.numeroOperacion,
-          fecha_pago: pagoForm.fechaPago
-        })
-        .select()
-        .single();
-
-      if (ordenError) throw ordenError;
-
-      // Relacionar compras con la orden de pago
-      const relacionesCompras = [];
-      for (const compraId of selectedCompras) {
-        const compra = comprasProveedor.find(c => c.id === compraId);
-        if (compra) {
-          relacionesCompras.push({
-            orden_pago_id: ordenCreada.id,
-            compra_id: compraId,
-            monto_asignado: compra.saldo_pendiente
-          });
-        }
+        relacionesCompras.push({
+          orden_pago_id: ordenCreada.id,
+          compra_id: compraId,
+          monto_asignado: montoAsignado
+        });
       }
-
-      const { error: relacionError } = await supabase
-        .from('orden_pago_compras')
-        .insert(relacionesCompras);
-
-      if (relacionError) throw relacionError;
-
-      setSuccess(`Orden de pago ${numeroOrden} creada exitosamente`);
-      setIsDialogOpen(false);
-      setSelectedCompras([]);
-      setPagoForm({
-        formaPagoId: '',
-        numeroOperacion: '',
-        observaciones: '',
-        fechaPago: new Date().toISOString().split('T')[0]
-      });
-      
-      // Recargar datos
-      loadOrdenesPago();
-      loadComprasProveedor(selectedProveedor);
-      loadEstadoCuentaProveedores();
-
-    } catch (error) {
-      console.error('Error creating orden de pago:', error);
-      setError('Error al generar la orden de pago');
-    } finally {
-      setLoading(false);
     }
-  };
+
+    const { error: relacionError } = await supabase
+      .from('orden_pago_compras')
+      .insert(relacionesCompras);
+
+    if (relacionError) throw relacionError;
+
+    setSuccess(`Orden de pago ${numeroOrden} creada exitosamente`);
+    setIsDialogOpen(false);
+    setSelectedCompras([]);
+    setPagoForm({
+      formaPagoId: '',
+      numeroOperacion: '',
+      observaciones: '',
+      fechaPago: new Date().toISOString().split('T')[0],
+      montoParcial: 0  // RESETEAR
+    });
+    
+    // Recargar datos
+    loadOrdenesPago();
+    loadComprasProveedor(selectedProveedor);
+    loadEstadoCuentaProveedores();
+  } catch (error) {
+    console.error('Error creating orden de pago:', error);
+    setError('Error al generar la orden de pago');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleConfirmarPago = async () => {
   if (!confirmForm.numeroOperacion || !confirmForm.fechaPago) {
@@ -802,16 +818,24 @@ Fecha de emisión del reporte: ${formatDate(new Date().toISOString())}
                             </Table>
                           </div>
                           {selectedCompras.length > 0 && (
-                            <div className="mt-4 flex justify-between items-center p-4 bg-gray-50 rounded-lg">
-                              <div className="text-lg font-semibold">
-                                Total a Pagar: {formatCurrency(calcularTotalSeleccionado())}
-                              </div>
-                              <Button onClick={() => setIsDialogOpen(true)}>
-                                <Plus className="h-4 w-4 mr-2" />
-                                Generar Orden de Pago
-                              </Button>
-                            </div>
-                          )}
+  <div className="mt-4 flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+    <div className="text-lg font-semibold">
+      Total a Pagar: {selectedCompras.length === 1 && pagoForm.montoParcial > 0 
+        ? formatCurrency(pagoForm.montoParcial)
+        : formatCurrency(calcularTotalSeleccionado())
+      }
+      {selectedCompras.length === 1 && pagoForm.montoParcial > 0 && (
+        <span className="text-sm text-gray-500 ml-2">
+          (Pago parcial de {formatCurrency(calcularTotalSeleccionado())})
+        </span>
+      )}
+    </div>
+    <Button onClick={() => setIsDialogOpen(true)}>
+      <Plus className="h-4 w-4 mr-2" />
+      Generar Orden de Pago
+    </Button>
+  </div>
+)}
                         </>
                       )}
                     </CardContent>
@@ -976,6 +1000,24 @@ Fecha de emisión del reporte: ${formatDate(new Date().toISOString())}
                 className="bg-gray-50"
               />
             </div>
+
+            {/* AGREGAR ESTE CAMPO PARA PAGO PARCIAL */}
+  {selectedCompras.length === 1 && (
+    <div className="space-y-2">
+      <Label>Monto Parcial (opcional)</Label>
+      <Input
+        type="number"
+        placeholder="Dejar vacío para pago total"
+        value={pagoForm.montoParcial || ''}
+        onChange={(e) => setPagoForm({...pagoForm, montoParcial: Number(e.target.value)})}
+        max={calcularTotalSeleccionado()}
+      />
+      <p className="text-xs text-gray-500">
+        Máximo: {formatCurrency(calcularTotalSeleccionado())}
+      </p>
+    </div>
+  )}
+
             <div className="space-y-2">
               <Label>Forma de Pago</Label>
               <Select value={pagoForm.formaPagoId} onValueChange={(value) => 
