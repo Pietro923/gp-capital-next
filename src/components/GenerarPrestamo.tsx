@@ -10,10 +10,14 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface Cliente {
   id: string;
+  tipo_cliente: "PERSONA_FISICA" | "EMPRESA";
   nombre: string;
-  apellido: string;
-  direccion: string;
-  dni: string;
+  empresa: string;
+  apellido?: string;
+  direccion?: string;
+  dni?: string;
+  cuit?: string;
+  eliminado?: boolean; 
 }
 
 interface GenerarPrestamoProps {
@@ -27,6 +31,9 @@ interface GenerarPrestamoProps {
     empresa: string;
     frecuencia: string;
     iva: number;
+    moneda: string;        // Agregar
+    fechaInicio: string;   // Agregar
+    aplicarIVA: boolean;   // Agregar
     cuotas: Array<{
       numero: number;
       fechaVencimiento: string;
@@ -49,6 +56,7 @@ export function GenerarPrestamo({ open, onOpenChange, onConfirm, prestamoData }:
         const { data: clientesData, error: clientesError } = await supabase
           .from('clientes')
           .select('*')
+          .eq('eliminado', false) // Agregar esta línea
           .order('apellido');
 
         if (clientesError) throw clientesError;
@@ -65,70 +73,78 @@ export function GenerarPrestamo({ open, onOpenChange, onConfirm, prestamoData }:
   }, [open]);
 
   const handleGenerarPrestamo = async () => {
-    if (!clienteId || !metodoPago || !comprobante) {
-      setError("Por favor complete todos los campos");
-      return;
-    }
+  if (!clienteId || !comprobante) {
+    setError("Por favor complete todos los campos");
+    return;
+  }
+  
+  setLoading(true);
+  setError(null);
+  
+  try {
+    // Obtener información del cliente seleccionado
+    const clienteSeleccionado = clientes.find(c => c.id === clienteId);
+    const nombreCliente = clienteSeleccionado ? 
+      (clienteSeleccionado.tipo_cliente === "EMPRESA" 
+        ? clienteSeleccionado.empresa // Usar el campo empresa
+        : `${clienteSeleccionado.apellido || ''}, ${clienteSeleccionado.nombre || ''}`.trim().replace(/^,\s*/, '').replace(/,\s*$/, '') || 'Sin nombre') 
+      : 'Cliente no identificado';
 
-    setLoading(true);
-    setError(null);
-
-    try {
-      // 1. Crear el préstamo
-      const { data: prestamo, error: prestamoError } = await supabase
-        .from('prestamos')
-        .insert([{
-          cliente_id: clienteId,
-          monto_total: prestamoData.monto,
-          tasa_interes: prestamoData.tasaInteres,
-          cantidad_cuotas: prestamoData.plazo,
-          estado: 'ACTIVO',
-          fecha_inicio: new Date().toISOString()
-        }])
-        .select()
-        .single();
-
-      if (prestamoError) throw prestamoError;
-
-      // 2. Crear las cuotas
-      const cuotasInsert = prestamoData.cuotas.map(cuota => ({
-        prestamo_id: prestamo.id,
-        numero_cuota: cuota.numero,
-        monto: cuota.cuota,
-        fecha_vencimiento: cuota.fechaVencimiento,
-        estado: 'PENDIENTE'
-      }));
-
-      const { error: cuotasError } = await supabase
-        .from('cuotas')
-        .insert(cuotasInsert);
-
-      if (cuotasError) throw cuotasError;
-
-      // 3. Registrar el movimiento en caja
-      const { error: movimientoError } = await supabase
-        .from('movimientos_caja')
-        .insert([{
-          tipo: 'EGRESO',
-          concepto: `Préstamo otorgado a cliente ${clienteId} - ${prestamoData.empresa}`,
-          monto: prestamoData.monto
-        }]);
-
-      if (movimientoError) throw movimientoError;
-
-      onConfirm();
-      onOpenChange(false);
-    } catch (err) {
-      console.error('Error al generar el préstamo:', err);
-      setError('Error al generar el préstamo. Por favor intente nuevamente.');
-    } finally {
-      setLoading(false);
-    }
-  };
+    // 1. Crear el préstamo
+    const { data: prestamo, error: prestamoError } = await supabase
+      .from('prestamos')
+      .insert([{
+        cliente_id: clienteId,
+        monto_total: prestamoData.monto,
+        tasa_interes: prestamoData.tasaInteres,
+        cantidad_cuotas: prestamoData.plazo,
+        estado: 'ACTIVO',
+        fecha_inicio: prestamoData.fechaInicio
+      }])
+      .select()
+      .single();
+      
+    if (prestamoError) throw prestamoError;
+    
+    // 2. Crear las cuotas
+    const cuotasInsert = prestamoData.cuotas.map(cuota => ({
+      prestamo_id: prestamo.id,
+      numero_cuota: cuota.numero,
+      monto: cuota.cuota,
+      fecha_vencimiento: cuota.fechaVencimiento,
+      estado: 'PENDIENTE'
+    }));
+    
+    const { error: cuotasError } = await supabase
+      .from('cuotas')
+      .insert(cuotasInsert);
+      
+    if (cuotasError) throw cuotasError;
+    
+    // 3. Registrar el movimiento en caja
+    const { error: movimientoError } = await supabase
+      .from('movimientos_caja')
+      .insert([{
+        tipo: 'EGRESO',
+        concepto: `Préstamo otorgado - ${nombreCliente} - $${prestamoData.monto.toLocaleString('es-AR')}`,
+        monto: prestamoData.monto
+      }]);
+      
+    if (movimientoError) throw movimientoError;
+    
+    onConfirm();
+    onOpenChange(false);
+  } catch (err) {
+    console.error('Error al generar el préstamo:', err);
+    setError('Error al generar el préstamo. Por favor intente nuevamente.');
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Generar Préstamo</DialogTitle>
         </DialogHeader>
@@ -148,24 +164,40 @@ export function GenerarPrestamo({ open, onOpenChange, onConfirm, prestamoData }:
                 <SelectValue placeholder="Seleccionar cliente" />
               </SelectTrigger>
               <SelectContent>
-                {clientes.map((cliente) => (
-                  <SelectItem key={cliente.id} value={cliente.id}>
-                    {cliente.apellido}, {cliente.nombre} - DNI: {cliente.dni}
-                  </SelectItem>
-                ))}
-              </SelectContent>
+  {clientes.map((cliente) => (
+    <SelectItem key={cliente.id} value={cliente.id}>
+      {cliente.tipo_cliente === "EMPRESA"
+        ? cliente.empresa // Usar cliente.empresa
+        : `${cliente.apellido || ''}, ${cliente.nombre || ''}`.trim().replace(/^,\s*/, '')
+      }
+      {cliente.tipo_cliente === "EMPRESA" && cliente.cuit 
+        ? ` - CUIT: ${cliente.cuit}` 
+        : cliente.dni 
+        ? ` - DNI: ${cliente.dni}` 
+        : ''
+      }
+    </SelectItem>
+  ))}
+</SelectContent>
             </Select>
           </div>
 
           <div className="space-y-2">
-            <Label>Resumen del Préstamo</Label>
-            <div className="grid grid-cols-2 gap-2 p-4 bg-slate-50 rounded-md">
-              <div>Monto: ${prestamoData.monto.toLocaleString('es-AR')}</div>
-              <div>Plazo: {prestamoData.plazo} meses</div>
-              <div>Tasa: {prestamoData.tasaInteres}%</div>
-              <div>Empresa: {prestamoData.empresa}</div>
-            </div>
-          </div>
+  <Label>Resumen del Préstamo</Label>
+  <div className="grid grid-cols-2 gap-2 p-4 bg-slate-50 rounded-md text-sm">
+    <div><strong>Moneda:</strong> {prestamoData.moneda}</div>
+    <div><strong>Monto:</strong> ${prestamoData.monto.toLocaleString('es-AR')}</div>
+    <div><strong>Frecuencia:</strong> {prestamoData.frecuencia === 'semestral' ? 'Semestral' : 'Mensual'}</div>
+              {/*<div>Empresa: {prestamoData.empresa}</div>*/}
+    <div><strong>Plazo:</strong> {prestamoData.plazo} {prestamoData.frecuencia === 'semestral' ? 'semestres' : 'meses'}</div>
+    <div><strong>Fecha Inicio:</strong> {new Date(prestamoData.fechaInicio).toLocaleDateString('es-AR')}</div>
+    <div><strong>Tasa Anual:</strong> {prestamoData.tasaInteres}%</div>
+    <div><strong>Aplica IVA:</strong> {prestamoData.aplicarIVA ? 'Sí' : 'No'}</div>
+    {prestamoData.aplicarIVA && (
+      <div><strong>IVA:</strong> {prestamoData.iva}%</div>
+    )}
+  </div>
+</div>
 
           <div className="space-y-2">
             <Label>Comprobante</Label>
@@ -178,21 +210,26 @@ export function GenerarPrestamo({ open, onOpenChange, onConfirm, prestamoData }:
         </div>
 
         <DialogFooter>
-          <Button 
-            variant="secondary" 
-            onClick={() => onOpenChange(false)}
-            disabled={loading}
-          >
-            Cancelar
-          </Button>
-          <Button 
-            variant="default" 
-            onClick={handleGenerarPrestamo}
-            disabled={loading}
-          >
-            {loading ? "Procesando..." : "Generar Préstamo"}
-          </Button>
-        </DialogFooter>
+  <Button 
+    variant="secondary" 
+    onClick={() => {
+      setClienteId(""); // Limpiar cliente seleccionado
+      setComprobante(""); // Limpiar comprobante
+      setError(null); // Limpiar errores
+      onOpenChange(false); // Cerrar dialog
+    }}
+    disabled={loading}
+  >
+    Cancelar
+  </Button>
+  <Button 
+    variant="default" 
+    onClick={handleGenerarPrestamo}
+    disabled={loading}
+  >
+    {loading ? "Procesando..." : "Generar Préstamo"}
+  </Button>
+</DialogFooter>
       </DialogContent>
     </Dialog>
   );

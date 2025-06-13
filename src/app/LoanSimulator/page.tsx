@@ -560,19 +560,22 @@ const exportToExcel = () => {
                 setCuotas([]);
               }}
               prestamoData={{
-                monto,
-                plazo,
-                tasaInteres,
-                empresa,
-                frecuencia,
-                iva: aplicarIVA ? porcentajeIVA : 0,
-                cuotas: cuotas.map(c => ({
-                  numero: c.numero,
-                  fechaVencimiento: c.fechaVencimiento,
-                  cuota: c.cuota
-                }))
-              }}
-            />
+                  monto,
+                  plazo,
+                  tasaInteres,
+                  empresa,
+                  frecuencia,
+                  iva: aplicarIVA ? porcentajeIVA : 0,
+                  moneda,           // Agregar
+                  fechaInicio,      // Agregar
+                  aplicarIVA,       // Agregar
+                  cuotas: cuotas.map(c => ({
+                    numero: c.numero,
+                    fechaVencimiento: c.fechaVencimiento,
+                    cuota: c.cuota
+                  }))
+                }}
+              />
             
             {cuotas.length > 0 && (
               <Button variant="outline" onClick={exportToExcel}>
