@@ -230,7 +230,7 @@ const handleBankInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextA
         .insert([
           {
             ...formData,
-            fecha_movimiento: new Date().toISOString(),
+           fecha_movimiento: formData.fecha_movimiento, // Usar la fecha seleccionada
           },
         ])
         .select();
@@ -261,7 +261,7 @@ const handleBankInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextA
         .insert([
           {
             ...bankFormData,
-            fecha_movimiento: new Date().toISOString(),
+            fecha_movimiento: bankFormData.fecha_movimiento, // Usar la fecha seleccionada
           },
         ])
         .select();
@@ -485,6 +485,14 @@ const handleEditBankInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLT
   }
 };
 
+// Función para formatear fecha correctamente
+const formatearFecha = (fechaString: string) => {
+  // Si la fecha viene como '2025-06-02 00:00:00+00' o '2025-06-02T00:00:00.000Z'
+  const fechaSolo = fechaString.split('T')[0].split(' ')[0]; // Obtiene solo '2025-06-02'
+  const [año, mes, dia] = fechaSolo.split('-');
+  return `${dia}/${mes}/${año}`;
+};
+
   return (
     <div className="space-y-4">
       <Card>
@@ -633,7 +641,7 @@ const handleEditBankInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLT
                       {filteredMovimientos.map((movimiento) => (
                         <TableRow key={movimiento.id} className="hover:bg-slate-50">
                           <TableCell className="hidden sm:table-cell">
-                            {new Date(movimiento.fecha_movimiento).toLocaleDateString()}
+                            {formatearFecha(movimiento.fecha_movimiento)}
                           </TableCell>
                           <TableCell
                             className={getTipoColor(movimiento.tipo)}
@@ -678,131 +686,7 @@ const handleEditBankInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLT
                   <p className="text-3xl font-bold">${currentBalance.toLocaleString()}</p>
                 </CardContent>
               </Card>
-            </TabsContent>
-
-            {/* TAB DE BANCO */}
-            <TabsContent value="banco" className="space-y-4">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0 pb-4">
-                <h3 className="text-lg font-semibold">Movimientos Bancarios</h3>
-                <div className="flex space-x-2">
-                  <Dialog open={isBankDialogOpen} onOpenChange={setIsBankDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button variant="outline" className="w-full sm:w-auto">
-                        Nuevo Movimiento
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-md max-w-[95vw] p-4 sm:p-6">
-                      <DialogHeader>
-                        <DialogTitle>Nuevo Movimiento Bancario</DialogTitle>
-                        <DialogDescription>
-                          Registre un nuevo movimiento bancario
-                        </DialogDescription>
-                      </DialogHeader>
-                      <form onSubmit={handleBankSubmit} className="space-y-4 mt-2">
-                        <div className="space-y-2">
-                          <Label htmlFor="banco-tipo-movimiento">Tipo de Movimiento</Label>
-                          <Select
-                            value={bankFormData.tipo}
-                            onValueChange={(value) => 
-                              handleBankSelectChange(value as "INGRESO" | "EGRESO" | "GASTO_BANCARIO")
-                            }
-                          >
-                            <SelectTrigger id="banco-tipo-movimiento" className="w-full">
-                              <SelectValue placeholder="Seleccionar tipo" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="INGRESO">Ingreso</SelectItem>
-                              <SelectItem value="EGRESO">Egreso</SelectItem>
-                              <SelectItem value="GASTO_BANCARIO">Gasto Bancario</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="fecha">Fecha del Movimiento</Label>
-                          <Input
-                            id="fecha"
-                            name="fecha_movimiento"
-                            type="date"
-                            required
-                            value={formData.fecha_movimiento}
-                            onChange={handleInputChange}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="banco-concepto">Concepto</Label>
-                          <Input
-                            id="banco-concepto"
-                            name="concepto"
-                            required
-                            value={bankFormData.concepto}
-                            onChange={handleBankInputChange}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="banco-monto">Monto</Label>
-                          <Input
-                            id="banco-monto"
-                            name="monto"
-                            type="number"
-                            required
-                            value={bankFormData.monto}
-                            onChange={handleBankInputChange}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="banco-operacion">Número de Operación</Label>
-                          <Input
-                            id="banco-operacion"
-                            name="numero_operacion"
-                            value={bankFormData.numero_operacion}
-                            onChange={handleBankInputChange}
-                            placeholder="Opcional"
-                          />
-                        </div>
-                        {bankFormData.tipo === "GASTO_BANCARIO" && (
-                          <div className="space-y-2">
-                            <Label htmlFor="banco-detalle">Detalle de Gastos/Impuestos</Label>
-                            <textarea
-                              id="banco-detalle"
-                              name="detalle_gastos"
-                              placeholder="Detalle los impuestos y gastos bancarios..."
-                              value={bankFormData.detalle_gastos}
-                              onChange={handleBankInputChange}
-                              className="w-full p-2 border border-gray-300 rounded-md min-h-[80px] resize-vertical"
-                              rows={3}
-                            />
-                          </div>
-                        )}
-                        {formError && (
-                          <Alert variant="destructive">
-                            <AlertDescription>{formError}</AlertDescription>
-                          </Alert>
-                        )}
-                        <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-0 mt-4">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setIsBankDialogOpen(false)}
-                            className="w-full sm:w-auto"
-                          >
-                            Cancelar
-                          </Button>
-                          <Button 
-                            type="submit" 
-                            disabled={isSubmitting}
-                            className="w-full sm:w-auto"
-                          >
-                            {isSubmitting && (
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            )}
-                            Guardar Movimiento
-                          </Button>
-                        </DialogFooter>
-                      </form>
-                    </DialogContent>
-                  </Dialog>
-                </div>
-                {/* Dialog para Editar Movimiento de Caja */}
+              {/* Dialog para Editar Movimiento de Caja */}
 <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
   <DialogContent className="sm:max-w-md max-w-[95vw] p-4 sm:p-6">
     <DialogHeader>
@@ -891,6 +775,130 @@ const handleEditBankInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLT
     )}
   </DialogContent>
 </Dialog>
+            </TabsContent>
+
+            {/* TAB DE BANCO */}
+            <TabsContent value="banco" className="space-y-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0 pb-4">
+                <h3 className="text-lg font-semibold">Movimientos Bancarios</h3>
+                <div className="flex space-x-2">
+                  <Dialog open={isBankDialogOpen} onOpenChange={setIsBankDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" className="w-full sm:w-auto">
+                        Nuevo Movimiento
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-md max-w-[95vw] p-4 sm:p-6">
+                      <DialogHeader>
+                        <DialogTitle>Nuevo Movimiento Bancario</DialogTitle>
+                        <DialogDescription>
+                          Registre un nuevo movimiento bancario
+                        </DialogDescription>
+                      </DialogHeader>
+                      <form onSubmit={handleBankSubmit} className="space-y-4 mt-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="banco-tipo-movimiento">Tipo de Movimiento</Label>
+                          <Select
+                            value={bankFormData.tipo}
+                            onValueChange={(value) => 
+                              handleBankSelectChange(value as "INGRESO" | "EGRESO" | "GASTO_BANCARIO")
+                            }
+                          >
+                            <SelectTrigger id="banco-tipo-movimiento" className="w-full">
+                              <SelectValue placeholder="Seleccionar tipo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="INGRESO">Ingreso</SelectItem>
+                              <SelectItem value="EGRESO">Egreso</SelectItem>
+                              <SelectItem value="GASTO_BANCARIO">Gasto Bancario</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="fecha">Fecha del Movimiento</Label>
+                          <Input
+                            id="fecha"
+                            name="fecha_movimiento"
+                            type="date"
+                            required
+                            value={bankFormData.fecha_movimiento}
+                            onChange={handleBankInputChange}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="banco-concepto">Concepto</Label>
+                          <Input
+                            id="banco-concepto"
+                            name="concepto"
+                            required
+                            value={bankFormData.concepto}
+                            onChange={handleBankInputChange}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="banco-monto">Monto</Label>
+                          <Input
+                            id="banco-monto"
+                            name="monto"
+                            type="number"
+                            required
+                            value={bankFormData.monto}
+                            onChange={handleBankInputChange}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="banco-operacion">Número de Operación</Label>
+                          <Input
+                            id="banco-operacion"
+                            name="numero_operacion"
+                            value={bankFormData.numero_operacion}
+                            onChange={handleBankInputChange}
+                            placeholder="Opcional"
+                          />
+                        </div>
+                        {bankFormData.tipo === "GASTO_BANCARIO" && (
+                          <div className="space-y-2">
+                            <Label htmlFor="banco-detalle">Detalle de Gastos/Impuestos</Label>
+                            <textarea
+                              id="banco-detalle"
+                              name="detalle_gastos"
+                              placeholder="Detalle los impuestos y gastos bancarios..."
+                              value={bankFormData.detalle_gastos}
+                              onChange={handleBankInputChange}
+                              className="w-full p-2 border border-gray-300 rounded-md min-h-[80px] resize-vertical"
+                              rows={3}
+                            />
+                          </div>
+                        )}
+                        {formError && (
+                          <Alert variant="destructive">
+                            <AlertDescription>{formError}</AlertDescription>
+                          </Alert>
+                        )}
+                        <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-0 mt-4">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setIsBankDialogOpen(false)}
+                            className="w-full sm:w-auto"
+                          >
+                            Cancelar
+                          </Button>
+                          <Button 
+                            type="submit" 
+                            disabled={isSubmitting}
+                            className="w-full sm:w-auto"
+                          >
+                            {isSubmitting && (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            )}
+                            Guardar Movimiento
+                          </Button>
+                        </DialogFooter>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                </div>
 
 {/* Dialog para Editar Movimiento Bancario */}
 <Dialog open={isEditBankDialogOpen} onOpenChange={setIsEditBankDialogOpen}>
@@ -1036,7 +1044,7 @@ const handleEditBankInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLT
                       {filteredMovimientosBanco.map((movimiento) => (
                         <TableRow key={movimiento.id} className="hover:bg-slate-50">
                           <TableCell className="hidden sm:table-cell">
-                            {new Date(movimiento.fecha_movimiento).toLocaleDateString()}
+                            {formatearFecha(movimiento.fecha_movimiento)}
                           </TableCell>
                           <TableCell
                             className={getTipoColor(movimiento.tipo)}
