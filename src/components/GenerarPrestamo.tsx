@@ -46,7 +46,6 @@ export function GenerarPrestamo({ open, onOpenChange, onConfirm, prestamoData }:
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [clienteId, setClienteId] = useState<string>("");
-  const [metodoPago] = useState<string>("");
   const [comprobante, setComprobante] = useState<string>("");
   const [clientes, setClientes] = useState<Cliente[]>([]);
 
