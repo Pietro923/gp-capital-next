@@ -1,5 +1,4 @@
 "use client";
-
 import React, { useState, useEffect } from 'react';
 import {
   Card,
@@ -24,15 +23,19 @@ import { PagarDialog } from "@/components/PagarDialog";
 
 // Interfaces actualizadas según el esquema de Supabase
 interface Cliente {
-  id: string; // UUID
+  id: string;
+  tipo_cliente: "PERSONA_FISICA" | "EMPRESA";
   nombre: string;
-  apellido: string;
-  dni: string;
+  apellido?: string;
+  empresa?: string;
+  dni?: string;
+  cuit?: string;
+  eliminado: boolean;
 }
 
 interface Cuota {
-  id: string; // UUID
-  prestamo_id: string; // UUID
+  id: string;
+  prestamo_id: string;
   numero_cuota: number;
   monto: number;
   fecha_vencimiento: string;
@@ -41,8 +44,8 @@ interface Cuota {
 }
 
 interface Prestamo {
-  id: string; // UUID
-  cliente_id: string; // UUID
+  id: string;
+  cliente_id: string;
   monto_total: number;
   tasa_interes: number;
   cantidad_cuotas: number;
@@ -58,7 +61,7 @@ interface PrestamoConCuotas extends Prestamo {
 
 interface ExcelRow {
   Cliente: string;
-  DNI: string;
+  Documento: string;
   'Número de Cuota': number;
   'Fecha Vencimiento': string;
   'Monto': number;
@@ -73,7 +76,34 @@ const LoanDetails = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedPrestamos, setExpandedPrestamos] = useState<string[]>([]);
-  const [open, setOpen] = useState(false);
+  
+  // Estado mejorado para el dialog de pago
+  const [dialogState, setDialogState] = useState<{
+    open: boolean;
+    cuotaData: {
+      cuotaId: string;
+      prestamoId: string;
+      numeroCuota: number;
+      montoCuota: number;
+    } | null;
+  }>({
+    open: false,
+    cuotaData: null
+  });
+
+  // Función para obtener el nombre correcto del cliente
+  const getNombreCliente = (cliente: Cliente) => {
+    return cliente.tipo_cliente === "EMPRESA" 
+      ? cliente.empresa || 'Empresa sin nombre'
+      : `${cliente.apellido || ''}, ${cliente.nombre || ''}`.trim().replace(/^,\s*/, '') || 'Sin nombre';
+  };
+
+  // Función para formatear fechas correctamente
+  const formatearFecha = (fechaString: string) => {
+    const fechaSolo = fechaString.split('T')[0];
+    const [año, mes, dia] = fechaSolo.split('-');
+    return `${dia}/${mes}/${año}`;
+  };
 
   const fetchData = async () => {
     try {
@@ -82,9 +112,10 @@ const LoanDetails = () => {
         .from('prestamos')
         .select(`
           *,
-          cliente:clientes(*),
+          cliente:clientes!inner(*),
           cuotas(*)
         `)
+        .eq('cliente.eliminado', false) // Solo clientes no eliminados
         .order('fecha_inicio', { ascending: false });
 
       if (prestamosError) throw prestamosError;
@@ -118,22 +149,47 @@ const LoanDetails = () => {
     }
   };
 
-  const filteredPrestamos = prestamos.filter(prestamo =>
-    `${prestamo.cliente.nombre} ${prestamo.cliente.apellido}`
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase())
-  );
+  // Función mejorada para manejar el click de pagar
+  const handlePagarClick = (cuota: Cuota, prestamoId: string) => {
+    setDialogState({
+      open: true,
+      cuotaData: {
+        cuotaId: cuota.id,
+        prestamoId: prestamoId,
+        numeroCuota: cuota.numero_cuota,
+        montoCuota: cuota.monto
+      }
+    });
+  };
+
+  // Filtro mejorado que incluye búsqueda por documento
+  const filteredPrestamos = prestamos.filter(prestamo => {
+    const nombreCliente = getNombreCliente(prestamo.cliente);
+    const documento = prestamo.cliente.dni || prestamo.cliente.cuit || '';
+    
+    return (
+      nombreCliente.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      documento.includes(searchTerm)
+    );
+  });
 
   const exportToExcel = () => {
+    if (filteredPrestamos.length === 0) {
+      alert('No hay datos para exportar');
+      return;
+    }
+
     const excelData: ExcelRow[] = filteredPrestamos.flatMap(prestamo => 
       prestamo.cuotas.map(cuota => ({
-        'Cliente': `${prestamo.cliente.nombre} ${prestamo.cliente.apellido}`,
-        'DNI': prestamo.cliente.dni,
+        'Cliente': getNombreCliente(prestamo.cliente),
+        'Documento': prestamo.cliente.tipo_cliente === "EMPRESA" 
+          ? prestamo.cliente.cuit || '' 
+          : prestamo.cliente.dni || '',
         'Número de Cuota': cuota.numero_cuota,
-        'Fecha Vencimiento': new Date(cuota.fecha_vencimiento).toLocaleDateString('es-AR'),
+        'Fecha Vencimiento': formatearFecha(cuota.fecha_vencimiento),
         'Monto': cuota.monto,
         'Estado': cuota.estado,
-        'Fecha Pago': cuota.fecha_pago ? new Date(cuota.fecha_pago).toLocaleDateString('es-AR') : '',
+        'Fecha Pago': cuota.fecha_pago ? formatearFecha(cuota.fecha_pago) : '',
         'Tasa Interés': prestamo.tasa_interes
       }))
     );
@@ -141,6 +197,7 @@ const LoanDetails = () => {
     let csvContent = '\ufeff';
     const headers = Object.keys(excelData[0]) as (keyof ExcelRow)[];
     csvContent += headers.join(';') + '\n';
+
     excelData.forEach(row => {
       const values = headers.map(header => {
         const value = row[header];
@@ -153,10 +210,11 @@ const LoanDetails = () => {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `prestamos_${new Date().toISOString().split('T')[0]}.xls`);
+    link.setAttribute('download', `prestamos_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   if (loading) {
@@ -181,220 +239,238 @@ const LoanDetails = () => {
   };
 
   return (
-  <div className="space-y-4">
-    <Card>
-      <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0 pb-4">
-        <CardTitle>Detalle de Préstamos y Cuotas</CardTitle>
-        <Button variant="outline" onClick={exportToExcel} className="w-full sm:w-auto">
-          <Download className="mr-2 h-4 w-4" /> Exportar
-        </Button>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-col space-y-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
-            <Input
-              placeholder="Buscar por cliente..."
-              className="pl-8"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          {filteredPrestamos.some(p => p.cuotas.some(c => c.estado === 'VENCIDO')) && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                Hay cuotas vencidas que requieren atención inmediata.
-              </AlertDescription>
-            </Alert>
-          )}
-          
-          {/* Tabla para pantallas medianas y grandes */}
-          <div className="hidden md:block rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead></TableHead>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead>DNI</TableHead>
-                  <TableHead className="text-right">Monto Total</TableHead>
-                  <TableHead className="text-right">Cuotas Pagadas</TableHead>
-                  <TableHead>Progreso</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredPrestamos.map(prestamo => (
-                  <React.Fragment key={prestamo.id}>
-                    <TableRow 
-                      className="cursor-pointer hover:bg-slate-50"
-                      onClick={() => toggleExpanded(prestamo.id)}
-                    >
-                      <TableCell>
-                        {expandedPrestamos.includes(prestamo.id) ? 
-                          <ChevronDown className="h-4 w-4" /> : 
-                          <ChevronRight className="h-4 w-4" />}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {`${prestamo.cliente.nombre} ${prestamo.cliente.apellido}`}
-                      </TableCell>
-                      <TableCell>{prestamo.cliente.dni}</TableCell>
-                      <TableCell className="text-right">
-                        ${prestamo.monto_total.toLocaleString('es-AR')}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {prestamo.cuotas_pagadas}/{prestamo.cantidad_cuotas}
-                      </TableCell>
-                      <TableCell>
-                        <div className="w-full bg-slate-200 rounded-full h-2.5">
-                          <div 
-                            className="bg-blue-600 h-2.5 rounded-full"
-                            style={{ width: `${(prestamo.cuotas_pagadas / prestamo.cantidad_cuotas) * 100}%` }}
-                          ></div>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                    {expandedPrestamos.includes(prestamo.id) && prestamo.cuotas.map(cuota => (
-                      <TableRow key={cuota.id} className="bg-slate-50">
-                        <TableCell></TableCell>
-                        <TableCell colSpan={2} className="text-sm">
-                          Cuota {cuota.numero_cuota}
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0 pb-4">
+          <CardTitle>Detalle de Préstamos y Cuotas</CardTitle>
+          <Button variant="outline" onClick={exportToExcel} className="w-full sm:w-auto">
+            <Download className="mr-2 h-4 w-4" /> Exportar
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col space-y-4">
+            <div className="flex-1 relative">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+              <Input
+                placeholder="Buscar por cliente o documento..."
+                className="pl-8"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+
+            {filteredPrestamos.some(p => p.cuotas.some(c => c.estado === 'VENCIDO')) && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Hay cuotas vencidas que requieren atención inmediata.
+                </AlertDescription>
+              </Alert>
+            )}
+            
+            {/* Tabla para pantallas medianas y grandes */}
+            <div className="hidden md:block rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead></TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Documento</TableHead>
+                    <TableHead className="text-right">Monto Total</TableHead>
+                    <TableHead className="text-right">Cuotas Pagadas</TableHead>
+                    <TableHead>Progreso</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredPrestamos.map(prestamo => (
+                    <React.Fragment key={prestamo.id}>
+                      <TableRow 
+                        className="cursor-pointer hover:bg-slate-50"
+                        onClick={() => toggleExpanded(prestamo.id)}
+                      >
+                        <TableCell>
+                          {expandedPrestamos.includes(prestamo.id) ? 
+                            <ChevronDown className="h-4 w-4" /> : 
+                            <ChevronRight className="h-4 w-4" />}
                         </TableCell>
-                        <TableCell className="text-right text-sm">
-                          ${cuota.monto.toLocaleString('es-AR')}
-                        </TableCell>
-                        <TableCell className="text-right text-sm">
-                          {cuota.fecha_pago ? 
-                            new Date(cuota.fecha_pago).toLocaleDateString('es-AR') : 
-                            '-'}
+                        <TableCell className="font-medium">
+                          {getNombreCliente(prestamo.cliente)}
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getEstadoColor(cuota.estado)}`}>
-                              {cuota.estado}
-                            </span>
-                            
-                            {cuota.estado !== 'PAGADO' && (
-                              <>
-                                <Button 
-                                  size="sm"
-                                  onClick={() => setOpen(true)}
-                                >
-                                  Pagar
-                                </Button>
-                                <PagarDialog
-                                  open={open}
-                                  onOpenChange={setOpen}
-                                  onConfirm={() => {
-                                    // Recargar los datos después del pago
-                                    fetchData();
-                                    setOpen(false);
-                                  }}
-                                  numeroCuota={cuota.numero_cuota}
-                                  cuotaId={cuota.id}
-                                  prestamoId={prestamo.id}
-                                  montoCuota={cuota.monto}
-                                />
-                              </>
-                            )}
+                          {prestamo.cliente.tipo_cliente === "EMPRESA" 
+                            ? prestamo.cliente.cuit || 'Sin CUIT'
+                            : prestamo.cliente.dni || 'Sin DNI'
+                          }
+                        </TableCell>
+                        <TableCell className="text-right">
+                          ${prestamo.monto_total.toLocaleString('es-AR')}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {prestamo.cuotas_pagadas}/{prestamo.cantidad_cuotas}
+                        </TableCell>
+                        <TableCell>
+                          <div className="w-full bg-slate-200 rounded-full h-2.5">
+                            <div 
+                              className="bg-blue-600 h-2.5 rounded-full"
+                              style={{ width: `${(prestamo.cuotas_pagadas / prestamo.cantidad_cuotas) * 100}%` }}
+                            ></div>
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))}
-                  </React.Fragment>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          
-          {/* Vista de tarjetas para móviles */}
-          <div className="block md:hidden space-y-4">
-            {filteredPrestamos.map(prestamo => (
-              <div key={prestamo.id} className="border rounded-lg shadow-sm overflow-hidden">
-                <div 
-                  className="flex items-center justify-between p-4 cursor-pointer bg-white hover:bg-slate-50"
-                  onClick={() => toggleExpanded(prestamo.id)}
-                >
-                  <div className="flex items-center space-x-2">
-                    {expandedPrestamos.includes(prestamo.id) ? 
-                      <ChevronDown className="h-4 w-4 flex-shrink-0" /> : 
-                      <ChevronRight className="h-4 w-4 flex-shrink-0" />}
-                    <div>
-                      <div className="font-medium">{`${prestamo.cliente.nombre} ${prestamo.cliente.apellido}`}</div>
-                      <div className="text-sm text-slate-500">DNI: {prestamo.cliente.dni}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-medium">${prestamo.monto_total.toLocaleString('es-AR')}</div>
-                    <div className="text-sm text-slate-500">
-                      {prestamo.cuotas_pagadas}/{prestamo.cantidad_cuotas} cuotas
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="px-4 pb-2">
-                  <div className="w-full bg-slate-200 rounded-full h-2.5">
-                    <div 
-                      className="bg-blue-600 h-2.5 rounded-full"
-                      style={{ width: `${(prestamo.cuotas_pagadas / prestamo.cantidad_cuotas) * 100}%` }}
-                    ></div>
-                  </div>
-                </div>
-                
-                {expandedPrestamos.includes(prestamo.id) && (
-                  <div className="bg-slate-50 divide-y divide-slate-200">
-                    {prestamo.cuotas.map(cuota => (
-                      <div key={cuota.id} className="p-4">
-                        <div className="flex justify-between items-center mb-2">
-                          <div className="font-medium">Cuota {cuota.numero_cuota}</div>
-                          <div className="font-medium">${cuota.monto.toLocaleString('es-AR')}</div>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <div className="text-sm text-slate-500">
+                      {expandedPrestamos.includes(prestamo.id) && prestamo.cuotas.map(cuota => (
+                        <TableRow key={cuota.id} className="bg-slate-50">
+                          <TableCell></TableCell>
+                          <TableCell colSpan={2} className="text-sm">
+                            <div>
+                              <div className="font-medium">Cuota {cuota.numero_cuota}</div>
+                              <div className="text-xs text-slate-500">
+                                Vencimiento: {formatearFecha(cuota.fecha_vencimiento)}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right text-sm">
+                            ${cuota.monto.toLocaleString('es-AR')}
+                          </TableCell>
+                          <TableCell className="text-right text-sm">
                             {cuota.fecha_pago ? 
-                              `Pagado: ${new Date(cuota.fecha_pago).toLocaleDateString('es-AR')}` : 
-                              'No pagado'}
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getEstadoColor(cuota.estado)}`}>
-                              {cuota.estado}
-                            </span>
-                            
-                            {cuota.estado !== 'PAGADO' && (
-                              <>
+                              formatearFecha(cuota.fecha_pago) : 
+                              '-'}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center space-x-2">
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getEstadoColor(cuota.estado)}`}>
+                                {cuota.estado}
+                              </span>
+                              
+                              {cuota.estado !== 'PAGADO' && (
                                 <Button 
                                   size="sm"
-                                  onClick={() => setOpen(true)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handlePagarClick(cuota, prestamo.id);
+                                  }}
                                 >
                                   Pagar
                                 </Button>
-                                <PagarDialog
-                                  open={open}
-                                  onOpenChange={setOpen}
-                                  onConfirm={() => {
-                                    fetchData();
-                                    setOpen(false);
-                                  }}
-                                  numeroCuota={cuota.numero_cuota}
-                                  cuotaId={cuota.id}
-                                  prestamoId={prestamo.id}
-                                  montoCuota={cuota.monto}
-                                />
-                              </>
-                            )}
-                          </div>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            
+            {/* Vista de tarjetas para móviles */}
+            <div className="block md:hidden space-y-4">
+              {filteredPrestamos.map(prestamo => (
+                <div key={prestamo.id} className="border rounded-lg shadow-sm overflow-hidden">
+                  <div 
+                    className="flex items-center justify-between p-4 cursor-pointer bg-white hover:bg-slate-50"
+                    onClick={() => toggleExpanded(prestamo.id)}
+                  >
+                    <div className="flex items-center space-x-2">
+                      {expandedPrestamos.includes(prestamo.id) ? 
+                        <ChevronDown className="h-4 w-4 flex-shrink-0" /> : 
+                        <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+                      <div>
+                        <div className="font-medium">{getNombreCliente(prestamo.cliente)}</div>
+                        <div className="text-sm text-slate-500">
+                          {prestamo.cliente.tipo_cliente === "EMPRESA" 
+                            ? `CUIT: ${prestamo.cliente.cuit || 'Sin CUIT'}`
+                            : `DNI: ${prestamo.cliente.dni || 'Sin DNI'}`
+                          }
                         </div>
                       </div>
-                    ))}
+                    </div>
+                    <div className="text-right">
+                      <div className="font-medium">${prestamo.monto_total.toLocaleString('es-AR')}</div>
+                      <div className="text-sm text-slate-500">
+                        {prestamo.cuotas_pagadas}/{prestamo.cantidad_cuotas} cuotas
+                      </div>
+                    </div>
                   </div>
-                )}
+                  
+                  <div className="px-4 pb-2">
+                    <div className="w-full bg-slate-200 rounded-full h-2.5">
+                      <div 
+                        className="bg-blue-600 h-2.5 rounded-full"
+                        style={{ width: `${(prestamo.cuotas_pagadas / prestamo.cantidad_cuotas) * 100}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                  
+                  {expandedPrestamos.includes(prestamo.id) && (
+                    <div className="bg-slate-50 divide-y divide-slate-200">
+                      {prestamo.cuotas.map(cuota => (
+                        <div key={cuota.id} className="p-4">
+                          <div className="flex justify-between items-center mb-2">
+                            <div>
+                              <div className="font-medium">Cuota {cuota.numero_cuota}</div>
+                              <div className="text-xs text-slate-500">
+                                Vencimiento: {formatearFecha(cuota.fecha_vencimiento)}
+                              </div>
+                            </div>
+                            <div className="font-medium">${cuota.monto.toLocaleString('es-AR')}</div>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <div className="text-sm text-slate-500">
+                              {cuota.fecha_pago ? 
+                                `Pagado: ${formatearFecha(cuota.fecha_pago)}` : 
+                                'No pagado'}
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getEstadoColor(cuota.estado)}`}>
+                                {cuota.estado}
+                              </span>
+                              
+                              {cuota.estado !== 'PAGADO' && (
+                                <Button 
+                                  size="sm"
+                                  onClick={() => handlePagarClick(cuota, prestamo.id)}
+                                >
+                                  Pagar
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Mostrar mensaje si no hay préstamos */}
+            {filteredPrestamos.length === 0 && !loading && (
+              <div className="text-center py-8 text-slate-500">
+                {searchTerm ? 'No se encontraron préstamos que coincidan con la búsqueda' : 'No hay préstamos registrados'}
               </div>
-            ))}
+            )}
           </div>
-        </div>
-      </CardContent>
-    </Card>
-  </div>
-);
+        </CardContent>
+      </Card>
+
+      {/* Dialog de pago - Fuera del map para evitar problemas */}
+      {dialogState.cuotaData && (
+        <PagarDialog
+          open={dialogState.open}
+          onOpenChange={(open) => setDialogState(prev => ({ ...prev, open }))}
+          onConfirm={() => {
+            fetchData();
+            setDialogState({ open: false, cuotaData: null });
+          }}
+          numeroCuota={dialogState.cuotaData.numeroCuota}
+          cuotaId={dialogState.cuotaData.cuotaId}
+          prestamoId={dialogState.cuotaData.prestamoId}
+          montoCuota={dialogState.cuotaData.montoCuota}
+        />
+      )}
+    </div>
+  );
 };
 
 export default LoanDetails;
