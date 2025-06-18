@@ -209,19 +209,23 @@ const InvoiceCollections: React.FC = () => {
 
   // Cargar estado de cuenta de clientes usando la vista
   const loadEstadoCuentaClientes = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('estado_cobros_clientes')
-        .select('*')
-        .order('cliente_apellido');
+  try {
+    const { data, error } = await supabase
+      .from('estado_cobros_clientes')
+      .select('*')
+      .order('cliente_apellido');
 
-      if (error) throw error;
-      setEstadoCuentaClientes(data || []);
-    } catch (error) {
-      console.error('Error loading estado cuenta clientes:', error);
-      setError('Error al cargar estado de cuenta de clientes');
-    }
-  };
+    if (error) throw error;
+
+    const dataFiltrada = (data || []).filter(cliente => !cliente.eliminado);
+
+    setEstadoCuentaClientes(dataFiltrada);
+  } catch (error) {
+    console.error('Error loading estado cuenta clientes:', error);
+    setError('Error al cargar estado de cuenta de clientes');
+  }
+};
+
 
   // Cargar facturas del cliente seleccionado
   useEffect(() => {

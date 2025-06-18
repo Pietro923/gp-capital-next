@@ -222,7 +222,6 @@ const loadFacturasHistory = async () => {
       `)
       .eq('eliminado', false)
       .order('created_at', { ascending: false })
-      .limit(20);
     
     if (historyError) throw historyError;
     if (data) setFacturas(data as FacturaData[]);
@@ -1057,7 +1056,12 @@ const handleDelete = async (facturaId: string) => {
     return `${factura.cliente.apellido}, ${factura.cliente.nombre}`;
   })()}
 </TableCell>
-                          <TableCell className="text-right">${factura.total_factura.toFixed(2)}</TableCell>
+                          <TableCell className="text-right">
+  {factura.tipo_factura.startsWith('NC') 
+    ? <span className="text-red-600">-${Math.abs(factura.total_factura).toFixed(2)}</span>
+    : `$${factura.total_factura.toFixed(2)}`
+  }
+</TableCell>
                           <TableCell>
         <div className="flex items-center">
           <input
