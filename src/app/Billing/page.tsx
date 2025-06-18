@@ -318,7 +318,7 @@ const loadFacturasHistory = async () => {
         .from('facturacion')
         .select(`
           *,
-          cliente:cliente_id(nombre, apellido, direccion, dni, cuit, tipo_iva:tipo_iva_id(nombre)),
+          cliente:cliente_id(nombre, apellido, direccion, dni, cuit, tipo_iva:tipo_iva_id(nombre), tipo_cliente, empresa),
           tipo_iva:tipo_iva_id(nombre),
           forma_pago:forma_pago_id(nombre)
         `)
@@ -340,13 +340,26 @@ const loadFacturasHistory = async () => {
       // Crear el documento PDF
       const doc = new jsPDF();
       const fechaFactura = facturaData.fecha_factura ? 
-      new Date(facturaData.fecha_factura + 'T12:00:00') : 
-      new Date(facturaData.created_at);
+        new Date(facturaData.fecha_factura + 'T12:00:00') : 
+        new Date(facturaData.created_at);
       const fecha = fechaFactura.toLocaleDateString('es-AR');
+      
+      // Determinar si es nota de crédito
+      const esNotaCredito = facturaData.tipo_factura.startsWith('NC');
+      const esNotaDebito = facturaData.tipo_factura.startsWith('ND');
       
       // Encabezado
       doc.setFontSize(18);
-      doc.text(`FACTURA ${facturaData.tipo_factura}`, 105, 20, { align: 'center' });
+      
+      // Título según tipo de documento
+      if (esNotaCredito) {
+        doc.text(`NOTA DE CRÉDITO ${facturaData.tipo_factura.substring(2)}`, 105, 20, { align: 'center' });
+      } else if (esNotaDebito) {
+        doc.text(`NOTA DE DÉBITO ${facturaData.tipo_factura.substring(2)}`, 105, 20, { align: 'center' });
+      } else {
+        doc.text(`FACTURA ${facturaData.tipo_factura}`, 105, 20, { align: 'center' });
+      }
+      
       doc.setFontSize(12);
       
       // Número de factura formateado con punto de venta
@@ -362,18 +375,21 @@ const loadFacturasHistory = async () => {
         doc.setFontSize(10);
         doc.text(`CAE: ${facturaData.cae}`, 105, 50, { align: 'center' });
         if (facturaData.cae_vencimiento) {
-  const fechaVencimiento = new Date(facturaData.cae_vencimiento + 'T12:00:00').toLocaleDateString('es-AR');
-  doc.text(`Vencimiento CAE: ${fechaVencimiento}`, 105, 55, { align: 'center' });
-}
+          const fechaVencimiento = new Date(facturaData.cae_vencimiento + 'T12:00:00').toLocaleDateString('es-AR');
+          doc.text(`Vencimiento CAE: ${fechaVencimiento}`, 105, 55, { align: 'center' });
+        }
       }
       
       // Datos del emisor
       doc.setFontSize(10);
       doc.text('GP CAPITAL S.A.', 14, 60);
-
       
       // Datos del cliente
-      doc.text(`Cliente: ${facturaData.cliente.nombre} ${facturaData.cliente.apellido}`, 14, 85);
+      const nombreCliente = facturaData.cliente.tipo_cliente === 'EMPRESA' 
+        ? facturaData.cliente.empresa 
+        : `${facturaData.cliente.apellido ? facturaData.cliente.apellido + ', ' : ''}${facturaData.cliente.nombre}`;
+      
+      doc.text(`Cliente: ${nombreCliente}`, 14, 85);
       doc.text(`DNI/CUIT: ${facturaData.cliente.cuit || facturaData.cliente.dni}`, 14, 90);
       doc.text(`Dirección: ${facturaData.cliente.direccion}`, 14, 95);
       doc.text(`Condición IVA: ${facturaData.cliente.tipo_iva?.nombre || facturaData.tipo_iva.nombre}`, 14, 100);
@@ -398,11 +414,19 @@ const loadFacturasHistory = async () => {
         headStyles: { fillColor: [66, 66, 66] }
       });
       
-      // Totales
+      // Totales - cambiar color si es nota de crédito
       const finalY = doc.lastAutoTable.finalY + 10;
-      doc.text(`Subtotal: $${facturaData.total_neto.toFixed(2)}`, 140, finalY);
-      doc.text(`IVA: $${facturaData.iva.toFixed(2)}`, 140, finalY + 7);
-      doc.text(`TOTAL: $${facturaData.total_factura.toFixed(2)}`, 140, finalY + 14);
+      
+      if (esNotaCredito || esNotaDebito) {
+        doc.setTextColor(255, 0, 0); // Rojo para notas de crédito/débito
+      }
+      
+      doc.text(`Subtotal: $${Math.abs(facturaData.total_neto).toFixed(2)}`, 140, finalY);
+      doc.text(`IVA: $${Math.abs(facturaData.iva).toFixed(2)}`, 140, finalY + 7);
+      doc.text(`TOTAL: $${Math.abs(facturaData.total_factura).toFixed(2)}`, 140, finalY + 14);
+      
+      // Restaurar color negro
+      doc.setTextColor(0, 0, 0);
       
       // Leyenda según si está cargada en AFIP o no
       doc.setFontSize(8);
@@ -412,8 +436,18 @@ const loadFacturasHistory = async () => {
         doc.text('Documento no válido como factura oficial - Copia para uso interno', 105, 280, { align: 'center' });
       }
       
+      // Nombre del archivo según tipo
+      let nombreArchivo = '';
+      if (esNotaCredito) {
+        nombreArchivo = `NotaCredito_${facturaData.tipo_factura.substring(2)}_${numeroFormatted}`;
+      } else if (esNotaDebito) {
+        nombreArchivo = `NotaDebito_${facturaData.tipo_factura.substring(2)}_${numeroFormatted}`;
+      } else {
+        nombreArchivo = `Factura_${facturaData.tipo_factura}_${numeroFormatted}`;
+      }
+      
       // Descargar el PDF
-      doc.save(`Factura_${facturaData.tipo_factura}_${numeroFormatted}.pdf`);
+      doc.save(`${nombreArchivo}.pdf`);
       
     } catch (error) {
       console.error('Error generando PDF:', error);
