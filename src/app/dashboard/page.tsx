@@ -110,15 +110,24 @@ export default function Dashboard() {
   };
 
   const obtenerFacturas = async () => {
-    const { data, error } = await supabase
-      .from('facturacion')
-      .select('total_factura')
-      .gte('fecha_factura', filtro.fechaInicio)  // antes era fecha_emision
-      .lte('fecha_factura', filtro.fechaFin)     // antes era fecha_emision
-    if (error) throw error;
-    const total = data.reduce((acc, factura) => acc + Number(factura.total_factura), 0);
-    return { total };
-  };
+  const { data, error } = await supabase
+    .from('facturacion')
+    .select('total_factura, tipo_factura') // ✅ Agregar tipo_factura
+    .gte('fecha_factura', filtro.fechaInicio)
+    .lte('fecha_factura', filtro.fechaFin)
+    .eq('eliminado', false); // ✅ Asegurar que no incluya eliminadas
+  
+  if (error) throw error;
+  
+  // ✅ CALCULAR IMPACTO REAL: Facturas suman, Notas de Crédito restan
+  const total = data.reduce((acc, factura) => {
+    const esNotaCredito = ['NCA', 'NCB', 'NCC'].includes(factura.tipo_factura);
+    const impacto = esNotaCredito ? -factura.total_factura : factura.total_factura;
+    return acc + impacto;
+  }, 0);
+  
+  return { total };
+};
 
   const obtenerCompras = async () => {
     const { data, error } = await supabase
@@ -425,212 +434,299 @@ export default function Dashboard() {
 
   // Función para exportar informe DETALLADO de Facturación y Compras - CORREGIDA
   const exportarFacturacionCompras = async () => {
-    setLoading(true);
-    try {
-      // Obtener datos detallados de facturación
-      const { data: facturasDetalle, error: facturaError } = await supabase
-        .from('facturacion')
-        .select(`
-          fecha_factura,  
-          numero_factura,
-          punto_venta,
-          tipo_factura,
-          total_factura,
-          cliente:cliente_id(
-            nombre,
-            apellido,
-            tipo_cliente,
-            empresa
-          )
-        `)
-        .eq('eliminado', false)
-        .gte('fecha_factura', filtro.fechaInicio)  // Cambio aquí (era fecha_emision)
-  .lte('fecha_factura', filtro.fechaFin)     // Cambio aquí (era fecha_emision)
-  .order('fecha_factura', { ascending: false });  // Cambio aquí (era fecha_emision)
+  setLoading(true);
+  try {
+    // Obtener datos detallados de facturación
+    const { data: facturasDetalle, error: facturaError } = await supabase
+      .from('facturacion')
+      .select(`
+        fecha_factura,  
+        numero_factura,
+        punto_venta,
+        tipo_factura,
+        total_factura,
+        cliente:cliente_id(
+          nombre,
+          apellido,
+          tipo_cliente,
+          empresa
+        )
+      `)
+      .eq('eliminado', false)
+      .gte('fecha_factura', filtro.fechaInicio)
+      .lte('fecha_factura', filtro.fechaFin)
+      .order('fecha_factura', { ascending: false });
 
-      if (facturaError) throw facturaError;
+    if (facturaError) throw facturaError;
 
-      // Obtener datos detallados de compras
-      const { data: comprasDetalle, error: compraError } = await supabase
-        .from('compras')
-        .select(`
-          fecha_compra,
-          numero_factura,
-          punto_venta,
-          tipo_factura,
-          total_factura,
-          proveedor:proveedor_id(
-            nombre,
-            cuit
-          )
-        `)
-        .gte('fecha_compra', filtro.fechaInicio)
-        .lte('fecha_compra', filtro.fechaFin)
-        .order('fecha_compra', { ascending: false });
+    // Obtener datos detallados de compras
+    const { data: comprasDetalle, error: compraError } = await supabase
+      .from('compras')
+      .select(`
+        fecha_compra,
+        numero_factura,
+        punto_venta,
+        tipo_factura,
+        total_factura,
+        proveedor:proveedor_id(
+          nombre,
+          cuit
+        )
+      `)
+      .gte('fecha_compra', filtro.fechaInicio)
+      .lte('fecha_compra', filtro.fechaFin)
+      .order('fecha_compra', { ascending: false });
 
-      if (compraError) throw compraError;
+    if (compraError) throw compraError;
 
-      // Crear datos base del informe
-      const datosBase = [
-        ["FACTURACIÓN Y COMPRAS - GP CAPITAL", "", "", ""],
-        [`Período: ${filtro.fechaInicio} al ${filtro.fechaFin}`, "", "", ""],
-        ["", "", "", ""],
-        ["RESUMEN", "", "", ""],
-        ["Concepto", "Monto", "", ""],
-        ["Total Facturado", informe.totalFacturado, "", ""],
-        ["Total Compras", informe.totalCompras, "", ""],
-        ["Diferencia", informe.totalFacturado - informe.totalCompras, "", ""],
-        ["", "", "", ""],
-        ["DETALLE DE FACTURACIÓN", "", "", ""],
-        ["Fecha", "N° Factura", "Cliente", "Monto"]
+    // ✅ CALCULAR TOTALES CORRECTOS CON IMPACTO DE NOTAS DE CRÉDITO
+    const totalFacturadoReal = facturasDetalle?.reduce((acc, factura) => {
+      const esNotaCredito = ['NCA', 'NCB', 'NCC'].includes(factura.tipo_factura);
+      return acc + (esNotaCredito ? -factura.total_factura : factura.total_factura);
+    }, 0) || 0;
+
+    const totalCompras = comprasDetalle?.reduce((acc, compra) => acc + compra.total_factura, 0) || 0;
+
+    // ✅ SEPARAR FACTURAS Y NOTAS DE CRÉDITO PARA ANÁLISIS
+    const facturas = facturasDetalle?.filter(f => !['NCA', 'NCB', 'NCC'].includes(f.tipo_factura)) || [];
+    const notasCredito = facturasDetalle?.filter(f => ['NCA', 'NCB', 'NCC'].includes(f.tipo_factura)) || [];
+    
+    const totalFacturas = facturas.reduce((sum, f) => sum + f.total_factura, 0);
+    const totalNotasCredito = notasCredito.reduce((sum, f) => sum + f.total_factura, 0);
+
+    // Crear datos base del informe CON VALORES CORREGIDOS
+    const datosBase = [
+      ["FACTURACIÓN Y COMPRAS - GP CAPITAL", "", "", ""],
+      [`Período: ${filtro.fechaInicio} al ${filtro.fechaFin}`, "", "", ""],
+      ["", "", "", ""],
+      ["RESUMEN EJECUTIVO", "", "", ""],
+      ["Concepto", "Monto", "", ""],
+      ["Total Facturas Emitidas", totalFacturas, "", ""],
+      ["Total Notas de Crédito", -totalNotasCredito, "", ""], // ✅ Mostrar como negativo
+      ["TOTAL NETO FACTURADO", totalFacturadoReal, "", ""], // ✅ Valor neto real
+      ["Total Compras", totalCompras, "", ""],
+      ["Diferencia Neta", totalFacturadoReal - totalCompras, "", ""],
+      ["", "", "", ""],
+      ["ANÁLISIS DE DOCUMENTOS", "", "", ""],
+      ["Cantidad Facturas", facturas.length, "", ""],
+      ["Cantidad Notas Crédito", notasCredito.length, "", ""],
+      ["Total Documentos", facturasDetalle?.length || 0, "", ""],
+      ["", "", "", ""],
+      ["DETALLE DE FACTURACIÓN", "", "", ""],
+      ["Fecha", "N° Factura", "Cliente", "Monto"]
+    ];
+
+    // ✅ AGREGAR DETALLES DE FACTURACIÓN CON INDICADORES DE NC
+    const detallesFacturacion = facturasDetalle?.map(factura => {
+      const numeroCompleto = factura.punto_venta 
+        ? `${factura.punto_venta}-${String(factura.numero_factura).padStart(8, '0')}`
+        : String(factura.numero_factura).padStart(8, '0');
+
+      const nombreCliente = factura.cliente 
+        ? ((factura.cliente as any).tipo_cliente === 'EMPRESA'
+            ? (factura.cliente as any).empresa || (factura.cliente as any).nombre
+            : `${(factura.cliente as any).apellido || ''}, ${(factura.cliente as any).nombre || ''}`.trim())
+        : 'Cliente no encontrado';
+
+      const esNotaCredito = ['NCA', 'NCB', 'NCC'].includes(factura.tipo_factura);
+      const montoImpacto = esNotaCredito ? -factura.total_factura : factura.total_factura;
+
+      return [
+        new Date(factura.fecha_factura).toLocaleDateString('es-AR'),
+        `${factura.tipo_factura}-${numeroCompleto}${esNotaCredito ? ' (NOTA CRÉDITO)' : ''}`,
+        nombreCliente,
+        montoImpacto // ✅ Mostrar impacto real (negativo para NC)
       ];
+    }) || [];
 
-      // Agregar detalles de facturación - CORREGIDO con as any
-      const detallesFacturacion = facturasDetalle?.map(factura => {
-        const numeroCompleto = factura.punto_venta 
-          ? `${factura.punto_venta}-${String(factura.numero_factura).padStart(8, '0')}`
-          : String(factura.numero_factura).padStart(8, '0');
+    // Separador entre facturas y compras
+    const separador = [
+      ["", "", "", ""],
+      ["DETALLE DE COMPRAS", "", "", ""],
+      ["Fecha", "N° Factura", "Proveedor", "Monto"]
+    ];
 
-        const nombreCliente = factura.cliente 
-          ? ((factura.cliente as any).tipo_cliente === 'EMPRESA'
-              ? (factura.cliente as any).empresa || (factura.cliente as any).nombre
-              : `${(factura.cliente as any).apellido || ''}, ${(factura.cliente as any).nombre || ''}`.trim())
-          : 'Cliente no encontrado';
+    // Agregar detalles de compras (sin cambios)
+    const detallesCompras = comprasDetalle?.map(compra => {
+      const numeroCompleto = compra.punto_venta 
+        ? `${compra.punto_venta}-${compra.numero_factura}`
+        : compra.numero_factura;
 
-        return [
-          new Date(factura.fecha_factura).toLocaleDateString('es-AR'),  // Cambio aquí
-          `${factura.tipo_factura}-${numeroCompleto}`,
-          nombreCliente,
-          factura.total_factura
-        ];
-      }) || [];
+      const nombreProveedor = compra.proveedor 
+        ? (compra.proveedor as any).nombre
+        : 'Proveedor no encontrado';
 
-      // Separador entre facturas y compras
-      const separador = [
-        ["", "", "", ""],
-        ["DETALLE DE COMPRAS", "", "", ""],
-        ["Fecha", "N° Factura", "Proveedor", "Monto"]
+      return [
+        new Date(compra.fecha_compra).toLocaleDateString('es-AR'),
+        `${compra.tipo_factura}-${numeroCompleto}`,
+        nombreProveedor,
+        compra.total_factura
       ];
+    }) || [];
 
-      // Agregar detalles de compras - CORREGIDO con as any
-      const detallesCompras = comprasDetalle?.map(compra => {
-        const numeroCompleto = compra.punto_venta 
-          ? `${compra.punto_venta}-${compra.numero_factura}`
-          : compra.numero_factura;
+    // Combinar todos los datos
+    const datosCompletos = [
+      ...datosBase,
+      ...detallesFacturacion,
+      ...separador,
+      ...detallesCompras
+    ];
 
-        const nombreProveedor = compra.proveedor 
-          ? (compra.proveedor as any).nombre
-          : 'Proveedor no encontrado';
+    // Crear el libro de trabajo
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(datosCompletos);
 
-        return [
-          new Date(compra.fecha_compra).toLocaleDateString('es-AR'),
-          `${compra.tipo_factura}-${numeroCompleto}`,
-          nombreProveedor,
-          compra.total_factura
-        ];
-      }) || [];
+    ws['!cols'] = [
+      { wch: 15 }, { wch: 25 }, { wch: 30 }, { wch: 15 }
+    ];
 
-      // Combinar todos los datos
-      const datosCompletos = [
-        ...datosBase,
-        ...detallesFacturacion,
-        ...separador,
-        ...detallesCompras
-      ];
+    // Formatear celdas importantes
+    if (ws['!ref']) {
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cell_address = XLSX.utils.encode_cell({c: C, r: R});
+          if (!ws[cell_address]) continue;
+          
+          const cell = ws[cell_address];
+          
+          if (typeof cell.v === 'string' && 
+              (cell.v.includes('CAPITAL') || 
+              cell.v.includes('DETALLE DE FACTURACIÓN') ||
+              cell.v.includes('DETALLE DE COMPRAS') ||
+              cell.v.includes('RESUMEN') ||
+              cell.v.includes('ANÁLISIS'))) {
+            if (!cell.s) cell.s = {};
+            cell.s.font = { bold: true };
+          }
+          
+          if (typeof cell.v === 'number' && Math.abs(cell.v) > 1000) {
+            if (!cell.s) cell.s = {};
+            cell.s.numFmt = '#,##0.00';
+          }
 
-      // Crear el libro de trabajo
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.aoa_to_sheet(datosCompletos);
-
-      ws['!cols'] = [
-        { wch: 15 }, { wch: 20 }, { wch: 30 }, { wch: 15 }
-      ];
-
-      // Formatear celdas importantes
-      if (ws['!ref']) {
-        const range = XLSX.utils.decode_range(ws['!ref']);
-        
-        for (let R = range.s.r; R <= range.e.r; ++R) {
-          for (let C = range.s.c; C <= range.e.c; ++C) {
-            const cell_address = XLSX.utils.encode_cell({c: C, r: R});
-            if (!ws[cell_address]) continue;
-            
-            const cell = ws[cell_address];
-            
-            if (typeof cell.v === 'string' && 
-                (cell.v.includes('CAPITAL') || 
-                cell.v.includes('DETALLE DE FACTURACIÓN') ||
-                cell.v.includes('DETALLE DE COMPRAS') ||
-                cell.v.includes('RESUMEN'))) {
-              if (!cell.s) cell.s = {};
-              cell.s.font = { bold: true };
-            }
-            
-            if (typeof cell.v === 'number' && cell.v > 1000) {
-              if (!cell.s) cell.s = {};
-              cell.s.numFmt = '#,##0.00';
-            }
+          // ✅ COLOREAR NOTAS DE CRÉDITO EN ROJO
+          if (typeof cell.v === 'number' && cell.v < 0) {
+            if (!cell.s) cell.s = {};
+            cell.s.font = { ...cell.s.font, color: { rgb: "FF0000" } };
           }
         }
       }
-
-      XLSX.utils.book_append_sheet(wb, ws, "Facturación y Compras");
-
-      // Crear hoja adicional solo con facturas - CORREGIDO con as any
-      if (facturasDetalle && facturasDetalle.length > 0) {
-        const facturasParaAnalisis = [
-          ["ANÁLISIS DE FACTURACIÓN", "", "", ""],
-          ["Fecha", "Tipo", "N° Factura", "Cliente", "Monto"],
-          ...facturasDetalle.map(f => [
-            new Date(f.fecha_factura).toLocaleDateString('es-AR'),  // Cambio aquí
-            f.tipo_factura,
-            f.punto_venta ? `${f.punto_venta}-${String(f.numero_factura).padStart(8, '0')}` : String(f.numero_factura),
-            f.cliente 
-              ? ((f.cliente as any).tipo_cliente === 'EMPRESA' 
-                  ? (f.cliente as any).empresa 
-                  : `${(f.cliente as any).apellido}, ${(f.cliente as any).nombre}`)
-              : 'Cliente no encontrado',
-            f.total_factura
-          ])
-        ];
-        
-        const wsFacturas = XLSX.utils.aoa_to_sheet(facturasParaAnalisis);
-        wsFacturas['!cols'] = [{ wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 25 }, { wch: 15 }];
-        XLSX.utils.book_append_sheet(wb, wsFacturas, "Solo Facturas");
-      }
-
-      // Crear hoja adicional solo con compras - CORREGIDO con as any
-      if (comprasDetalle && comprasDetalle.length > 0) {
-        const comprasParaAnalisis = [
-          ["ANÁLISIS DE COMPRAS", "", "", ""],
-          ["Fecha", "Tipo", "N° Factura", "Proveedor", "Monto"],
-          ...comprasDetalle.map(c => [
-            new Date(c.fecha_compra).toLocaleDateString('es-AR'),
-            c.tipo_factura,
-            c.punto_venta ? `${c.punto_venta}-${c.numero_factura}` : c.numero_factura,
-            c.proveedor 
-              ? (c.proveedor as any).nombre
-              : 'Proveedor no encontrado',
-            c.total_factura
-          ])
-        ];
-        
-        const wsCompras = XLSX.utils.aoa_to_sheet(comprasParaAnalisis);
-        wsCompras['!cols'] = [{ wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 25 }, { wch: 15 }];
-        XLSX.utils.book_append_sheet(wb, wsCompras, "Solo Compras");
-      }
-
-      const nombreArchivo = `Facturacion_Compras_Detallado_${filtro.fechaInicio}_${filtro.fechaFin}.xlsx`;
-      XLSX.writeFile(wb, nombreArchivo);
-      console.log(`✅ Exportado: ${facturasDetalle?.length || 0} facturas y ${comprasDetalle?.length || 0} compras`);
-      
-    } catch (error) {
-      console.error('Error exportando facturación y compras:', error);
-      alert('Error al exportar el informe detallado');
-    } finally {
-      setLoading(false);
     }
-  };
+
+    XLSX.utils.book_append_sheet(wb, ws, "Facturación y Compras");
+
+    // ✅ CREAR HOJA SEPARADA SOLO CON FACTURAS REGULARES
+    if (facturas.length > 0) {
+      const facturasParaAnalisis = [
+        ["SOLO FACTURAS REGULARES", "", "", "", ""],
+        ["Fecha", "Tipo", "N° Factura", "Cliente", "Monto"],
+        ...facturas.map(f => [
+          new Date(f.fecha_factura).toLocaleDateString('es-AR'),
+          f.tipo_factura,
+          f.punto_venta ? `${f.punto_venta}-${String(f.numero_factura).padStart(8, '0')}` : String(f.numero_factura),
+          f.cliente 
+            ? ((f.cliente as any).tipo_cliente === 'EMPRESA' 
+                ? (f.cliente as any).empresa 
+                : `${(f.cliente as any).apellido}, ${(f.cliente as any).nombre}`)
+            : 'Cliente no encontrado',
+          f.total_factura
+        ]),
+        ["", "", "", "", ""],
+        ["TOTAL FACTURAS", "", "", "", totalFacturas]
+      ];
+      
+      const wsFacturas = XLSX.utils.aoa_to_sheet(facturasParaAnalisis);
+      wsFacturas['!cols'] = [{ wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 25 }, { wch: 15 }];
+      XLSX.utils.book_append_sheet(wb, wsFacturas, "Solo Facturas");
+    }
+
+    // ✅ CREAR HOJA SEPARADA SOLO CON NOTAS DE CRÉDITO
+    if (notasCredito.length > 0) {
+      const notasCreditoAnalisis = [
+        ["SOLO NOTAS DE CRÉDITO", "", "", "", ""],
+        ["Fecha", "Tipo", "N° Factura", "Cliente", "Monto (Descuento)"],
+        ...notasCredito.map(f => [
+          new Date(f.fecha_factura).toLocaleDateString('es-AR'),
+          f.tipo_factura,
+          f.punto_venta ? `${f.punto_venta}-${String(f.numero_factura).padStart(8, '0')}` : String(f.numero_factura),
+          f.cliente 
+            ? ((f.cliente as any).tipo_cliente === 'EMPRESA' 
+                ? (f.cliente as any).empresa 
+                : `${(f.cliente as any).apellido}, ${(f.cliente as any).nombre}`)
+            : 'Cliente no encontrado',
+          -f.total_factura // ✅ Mostrar como negativo
+        ]),
+        ["", "", "", "", ""],
+        ["TOTAL NOTAS CRÉDITO", "", "", "", -totalNotasCredito]
+      ];
+      
+      const wsNotasCredito = XLSX.utils.aoa_to_sheet(notasCreditoAnalisis);
+      wsNotasCredito['!cols'] = [{ wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 25 }, { wch: 15 }];
+      XLSX.utils.book_append_sheet(wb, wsNotasCredito, "Notas de Crédito");
+    }
+
+    // ✅ CREAR HOJA CON RESUMEN COMPARATIVO
+    const resumenComparativo = [
+      ["RESUMEN COMPARATIVO", "", ""],
+      ["", "", ""],
+      ["FACTURACIÓN", "", ""],
+      ["Concepto", "Cantidad", "Monto Total"],
+      ["Facturas Regulares", facturas.length, totalFacturas],
+      ["Notas de Crédito", notasCredito.length, -totalNotasCredito],
+      ["NETO FACTURADO", facturasDetalle?.length || 0, totalFacturadoReal],
+      ["", "", ""],
+      ["COMPRAS", "", ""],
+      ["Total Compras", comprasDetalle?.length || 0, totalCompras],
+      ["", "", ""],
+      ["RESULTADO", "", ""],
+      ["Diferencia (Facturación - Compras)", "", totalFacturadoReal - totalCompras],
+      ["", "", ""],
+      ["ANÁLISIS", "", ""],
+      ["% Notas Crédito vs Facturas", "", facturas.length > 0 ? ((notasCredito.length / facturas.length) * 100).toFixed(2) + "%" : "0%"],
+      ["Promedio por Factura", "", facturas.length > 0 ? (totalFacturas / facturas.length).toFixed(2) : "0"],
+      ["Promedio por Nota Crédito", "", notasCredito.length > 0 ? (totalNotasCredito / notasCredito.length).toFixed(2) : "0"]
+    ];
+
+    const wsResumen = XLSX.utils.aoa_to_sheet(resumenComparativo);
+    wsResumen['!cols'] = [{ wch: 30 }, { wch: 15 }, { wch: 15 }];
+    XLSX.utils.book_append_sheet(wb, wsResumen, "Resumen Comparativo");
+
+    // Crear hoja adicional solo con compras (sin cambios)
+    if (comprasDetalle && comprasDetalle.length > 0) {
+      const comprasParaAnalisis = [
+        ["ANÁLISIS DE COMPRAS", "", "", ""],
+        ["Fecha", "Tipo", "N° Factura", "Proveedor", "Monto"],
+        ...comprasDetalle.map(c => [
+          new Date(c.fecha_compra).toLocaleDateString('es-AR'),
+          c.tipo_factura,
+          c.punto_venta ? `${c.punto_venta}-${c.numero_factura}` : c.numero_factura,
+          c.proveedor 
+            ? (c.proveedor as any).nombre
+            : 'Proveedor no encontrado',
+          c.total_factura
+        ])
+      ];
+      
+      const wsCompras = XLSX.utils.aoa_to_sheet(comprasParaAnalisis);
+      wsCompras['!cols'] = [{ wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 25 }, { wch: 15 }];
+      XLSX.utils.book_append_sheet(wb, wsCompras, "Solo Compras");
+    }
+
+    const nombreArchivo = `Facturacion_Compras_Detallado_${filtro.fechaInicio}_${filtro.fechaFin}.xlsx`;
+    XLSX.writeFile(wb, nombreArchivo);
+    
+    console.log(`✅ Exportado: ${facturas.length} facturas, ${notasCredito.length} notas crédito, ${comprasDetalle?.length || 0} compras`);
+    console.log(`📊 Total Neto Facturado: $${totalFacturadoReal.toLocaleString()}`);
+    
+  } catch (error) {
+    console.error('Error exportando facturación y compras:', error);
+    alert('Error al exportar el informe detallado');
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Función para exportar informe DETALLADO de Gestión de Préstamos - CORREGIDA
   const exportarGestionPrestamos = async () => {

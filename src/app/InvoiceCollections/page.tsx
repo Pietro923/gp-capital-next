@@ -20,6 +20,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from '@/utils/supabase/client';
 
+// ✅ FUNCIONES HELPER PARA NOTAS DE CRÉDITO
+const esNotaCredito = (tipoFactura: string): boolean => {
+  return tipoFactura === 'NCA' || tipoFactura === 'NCB' || tipoFactura === 'NCC';
+};
+
+
 // Interfaces
 interface Cliente {
   id: string;
@@ -105,11 +111,16 @@ const InvoiceCollections: React.FC = () => {
 
   // Cargar datos iniciales
   useEffect(() => {
-    loadClientes();
-    loadFormasPago();
-    loadCobros();
-    loadEstadoCuentaClientes();
-  }, []);
+  const loadInitialData = async () => {
+    await loadClientes();
+    await loadFormasPago();
+    await loadCobros();
+    await actualizarEstadosFacturasBalanceadas(); // ← NUEVA LÍNEA
+    await loadEstadoCuentaClientes();
+  };
+  
+  loadInitialData();
+}, []);
 
   // Cargar clientes
   const loadClientes = async () => {
@@ -127,7 +138,6 @@ const InvoiceCollections: React.FC = () => {
         `)
         .eq('eliminado', false)
         .order('apellido');
-
       if (error) throw error;
       setClientes(data || []);
     } catch (error) {
@@ -143,7 +153,6 @@ const InvoiceCollections: React.FC = () => {
         .from('formas_pago')
         .select('id, nombre')
         .order('nombre');
-
       if (error) throw error;
       setFormasPago(data || []);
     } catch (error) {
@@ -156,50 +165,49 @@ const InvoiceCollections: React.FC = () => {
   const loadCobros = async () => {
     try {
       const { data, error } = await supabase
-  .from('cobros')
-  .select(`
-    id,
-    numero_recibo,
-    factura_id,
-    fecha_cobro,
-    monto_cobrado,
-    numero_operacion,
-    observaciones,
-    facturacion (
-      numero_factura,
-      tipo_factura,
-      clientes (
-        id,
-        nombre,
-        apellido,
-        dni,
-        cuit,
-        tipo_cliente,
-        empresa
-      )
-    ),
-    formas_pago (nombre)
-  `)
-  .order('fecha_cobro', { ascending: false });
-
+        .from('cobros')
+        .select(`
+          id,
+          numero_recibo,
+          factura_id,
+          fecha_cobro,
+          monto_cobrado,
+          numero_operacion,
+          observaciones,
+          facturacion (
+            numero_factura,
+            tipo_factura,
+            clientes (
+              id,
+              nombre,
+              apellido,
+              dni,
+              cuit,
+              tipo_cliente,
+              empresa
+            )
+          ),
+          formas_pago (nombre)
+        `)
+        .order('fecha_cobro', { ascending: false });
       if (error) throw error;
-
+      
       const cobrosFormatted = data?.map(cobro => ({
-  id: cobro.id,
-  numero_recibo: cobro.numero_recibo,
-  factura_id: cobro.factura_id,
-  factura: {
-    numero_factura: (cobro.facturacion as any)?.numero_factura || '',
-    tipo_factura: (cobro.facturacion as any)?.tipo_factura || '',
-    cliente: (cobro.facturacion as any)?.clientes || {} as Cliente
-  },
-  fecha_cobro: cobro.fecha_cobro,
-  monto_cobrado: cobro.monto_cobrado,
-  forma_cobro: { nombre: (cobro.formas_pago as any)?.nombre || '' },
-  numero_operacion: cobro.numero_operacion,
-  observaciones: cobro.observaciones
-})) || [];
-
+        id: cobro.id,
+        numero_recibo: cobro.numero_recibo,
+        factura_id: cobro.factura_id,
+        factura: {
+          numero_factura: (cobro.facturacion as any)?.numero_factura || '',
+          tipo_factura: (cobro.facturacion as any)?.tipo_factura || '',
+          cliente: (cobro.facturacion as any)?.clientes || {} as Cliente
+        },
+        fecha_cobro: cobro.fecha_cobro,
+        monto_cobrado: cobro.monto_cobrado,
+        forma_cobro: { nombre: (cobro.formas_pago as any)?.nombre || '' },
+        numero_operacion: cobro.numero_operacion,
+        observaciones: cobro.observaciones
+      })) || [];
+      
       setCobros(cobrosFormatted);
     } catch (error) {
       console.error('Error loading cobros:', error);
@@ -207,25 +215,21 @@ const InvoiceCollections: React.FC = () => {
     }
   };
 
-  // Cargar estado de cuenta de clientes usando la vista
+  // Cargar estado de cuenta de clientes usando la vista CORREGIDA
   const loadEstadoCuentaClientes = async () => {
-  try {
-    const { data, error } = await supabase
-      .from('estado_cobros_clientes')
-      .select('*')
-      .order('cliente_apellido');
-
-    if (error) throw error;
-
-    const dataFiltrada = (data || []).filter(cliente => !cliente.eliminado);
-
-    setEstadoCuentaClientes(dataFiltrada);
-  } catch (error) {
-    console.error('Error loading estado cuenta clientes:', error);
-    setError('Error al cargar estado de cuenta de clientes');
-  }
-};
-
+    try {
+      const { data, error } = await supabase
+        .from('estado_cobros_clientes')
+        .select('*')
+        .order('cliente_apellido');
+      if (error) throw error;
+      const dataFiltrada = (data || []).filter(cliente => !cliente.eliminado);
+      setEstadoCuentaClientes(dataFiltrada);
+    } catch (error) {
+      console.error('Error loading estado cuenta clientes:', error);
+      setError('Error al cargar estado de cuenta de clientes');
+    }
+  };
 
   // Cargar facturas del cliente seleccionado
   useEffect(() => {
@@ -237,48 +241,57 @@ const InvoiceCollections: React.FC = () => {
     }
   }, [selectedCliente]);
 
+  // ✅ FUNCIÓN MEJORADA PARA CARGAR FACTURAS CON LÓGICA DE NOTAS DE CRÉDITO
   const loadFacturasCliente = async (clienteId: string) => {
-  try {
-    const { data, error } = await supabase
-      .from('facturacion')
-      .select(`
-        id,
-        numero_factura,
-        tipo_factura,
-        fecha_emision,
-        total_factura,
-        monto_cobrado,
-        estado_cobro,
-        fecha_vencimiento,
-        clientes (
+    try {
+      const { data, error } = await supabase
+        .from('facturacion')
+        .select(`
           id,
-          nombre,
-          apellido,
-          dni,
-          cuit,
-          tipo_cliente,
-          empresa
-        )
-      `)
-      .eq('cliente_id', clienteId)
-      .eq('eliminado', false)
-      .neq('estado_cobro', 'COBRADO_TOTAL')
-      .order('fecha_emision', { ascending: false });
-
-    if (error) throw error;
-
-    const facturasFormatted = data?.map(factura => ({
-      ...factura,
-      saldo_pendiente: factura.total_factura - factura.monto_cobrado,
-      cliente: (factura.clientes as any) || {} as Cliente
-    })) || [];
-
-    setFacturasCliente(facturasFormatted);
-  } catch (error) {
-    console.error('Error loading facturas cliente:', error);
-    setError('Error al cargar facturas del cliente');
-  }
-};
+          numero_factura,
+          tipo_factura,
+          fecha_emision,
+          total_factura,
+          monto_cobrado,
+          estado_cobro,
+          fecha_vencimiento,
+          clientes (
+            id,
+            nombre,
+            apellido,
+            dni,
+            cuit,
+            tipo_cliente,
+            empresa
+          )
+        `)
+        .eq('cliente_id', clienteId)
+        .eq('eliminado', false)
+        .neq('estado_cobro', 'COBRADO_TOTAL')
+        .order('fecha_emision', { ascending: false });
+      
+      if (error) throw error;
+      
+      // ✅ PROCESAR FACTURAS CON LÓGICA CORRECTA PARA NOTAS DE CRÉDITO
+      const facturasFormatted = data?.map(factura => {
+        // Para notas de crédito, el saldo pendiente debe ser negativo (porque reduce la deuda)
+        const saldoPendiente = esNotaCredito(factura.tipo_factura) 
+          ? -(factura.total_factura - factura.monto_cobrado)  // Negativo para NC
+          : (factura.total_factura - factura.monto_cobrado);  // Positivo para facturas normales
+        
+        return {
+          ...factura,
+          saldo_pendiente: saldoPendiente,
+          cliente: (factura.clientes as any) || {} as Cliente
+        };
+      }) || [];
+      
+      setFacturasCliente(facturasFormatted);
+    } catch (error) {
+      console.error('Error loading facturas cliente:', error);
+      setError('Error al cargar facturas del cliente');
+    }
+  };
 
   const handleCheckboxChange = (facturaId: string, checked: boolean) => {
     if (checked) {
@@ -288,10 +301,14 @@ const InvoiceCollections: React.FC = () => {
     }
   };
 
+  // ✅ FUNCIÓN CORREGIDA PARA CALCULAR TOTAL SELECCIONADO
   const calcularTotalSeleccionado = () => {
     return facturasCliente
       .filter(factura => selectedFacturas.includes(factura.id))
-      .reduce((total, factura) => total + factura.saldo_pendiente, 0);
+      .reduce((total, factura) => {
+        // Para notas de crédito, sumamos el valor absoluto ya que el usuario quiere "cobrar" la NC
+        return total + Math.abs(factura.saldo_pendiente);
+      }, 0);
   };
 
   const handleGenerarCobro = async () => {
@@ -299,7 +316,6 @@ const InvoiceCollections: React.FC = () => {
       setError('Debe seleccionar al menos una factura y una forma de cobro');
       return;
     }
-
     if (selectedFacturas.length > 1 && cobroForm.montoParcial > 0) {
       setError('No se puede hacer cobro parcial para múltiples facturas');
       return;
@@ -315,9 +331,8 @@ const InvoiceCollections: React.FC = () => {
         .from('cobros')
         .select('id', { count: 'exact' })
         .like('numero_recibo', `REC-${new Date().getFullYear()}-%`);
-
       if (countError) throw countError;
-
+      
       const numeroRecibo = `REC-${new Date().getFullYear()}-${String((recibosCount?.length || 0) + 1).padStart(3, '0')}`;
 
       // Procesar cada factura seleccionada
@@ -325,10 +340,10 @@ const InvoiceCollections: React.FC = () => {
         const factura = facturasCliente.find(f => f.id === facturaId);
         if (!factura) continue;
 
-        // Calcular monto a cobrar
+        // ✅ CALCULAR MONTO A COBRAR CONSIDERANDO NOTAS DE CRÉDITO
         const montoCobrar = selectedFacturas.length === 1 && cobroForm.montoParcial > 0 
           ? cobroForm.montoParcial 
-          : factura.saldo_pendiente;
+          : Math.abs(factura.saldo_pendiente); // Usar valor absoluto para NC
 
         // Crear cobro
         const { error: cobroError } = await supabase
@@ -342,10 +357,9 @@ const InvoiceCollections: React.FC = () => {
             numero_operacion: cobroForm.numeroOperacion,
             observaciones: cobroForm.observaciones
           });
-
         if (cobroError) throw cobroError;
 
-        // Actualizar monto cobrado en la factura
+        // ✅ ACTUALIZAR MONTO COBRADO EN LA FACTURA
         const nuevoMontoCobrado = factura.monto_cobrado + montoCobrar;
         const nuevoEstado = nuevoMontoCobrado >= factura.total_factura 
           ? 'COBRADO_TOTAL' 
@@ -358,13 +372,14 @@ const InvoiceCollections: React.FC = () => {
             estado_cobro: nuevoEstado
           })
           .eq('id', facturaId);
-
         if (facturaError) throw facturaError;
 
-        // Registrar movimiento en caja o banco
+        // ✅ REGISTRAR MOVIMIENTO CONSIDERANDO EL TIPO DE DOCUMENTO
         const formaPago = formasPago.find(f => f.id === cobroForm.formaPagoId);
         const esEfectivo = formaPago?.nombre.toLowerCase().includes('efectivo') || 
                          formaPago?.nombre.toLowerCase().includes('caja');
+
+        const conceptoBase = `${esNotaCredito(factura.tipo_factura) ? 'Aplicación Nota de Crédito' : 'Cobro factura'} ${factura.numero_factura} - Cliente: ${factura.cliente.apellido}, ${factura.cliente.nombre}`;
 
         if (esEfectivo) {
           // Movimiento de caja
@@ -372,7 +387,7 @@ const InvoiceCollections: React.FC = () => {
             .from('movimientos_caja')
             .insert({
               tipo: 'INGRESO',
-              concepto: `Cobro factura ${factura.numero_factura} - Cliente: ${factura.cliente.apellido}, ${factura.cliente.nombre}`,
+              concepto: conceptoBase,
               monto: montoCobrar,
               fecha_movimiento: cobroForm.fechaCobro
             });
@@ -382,7 +397,7 @@ const InvoiceCollections: React.FC = () => {
             .from('movimientos_banco')
             .insert({
               tipo: 'INGRESO',
-              concepto: `Cobro factura ${factura.numero_factura} - Cliente: ${factura.cliente.apellido}, ${factura.cliente.nombre}`,
+              concepto: conceptoBase,
               monto: montoCobrar,
               numero_operacion: cobroForm.numeroOperacion,
               fecha_movimiento: cobroForm.fechaCobro
@@ -405,7 +420,6 @@ const InvoiceCollections: React.FC = () => {
       loadCobros();
       loadFacturasCliente(selectedCliente);
       loadEstadoCuentaClientes();
-
     } catch (error) {
       console.error('Error creating cobro:', error);
       setError('Error al registrar el cobro');
@@ -416,10 +430,8 @@ const InvoiceCollections: React.FC = () => {
 
   const handleEditCobro = async () => {
     if (!selectedCobro) return;
-
     setLoading(true);
     setError(null);
-
     try {
       // Actualizar cobro
       const { error: updateError } = await supabase
@@ -431,7 +443,6 @@ const InvoiceCollections: React.FC = () => {
           observaciones: cobroForm.observaciones
         })
         .eq('id', selectedCobro.id);
-
       if (updateError) throw updateError;
 
       setSuccess('Cobro actualizado exitosamente');
@@ -441,7 +452,6 @@ const InvoiceCollections: React.FC = () => {
       // Recargar datos
       loadCobros();
       loadEstadoCuentaClientes();
-
     } catch (error) {
       console.error('Error updating cobro:', error);
       setError('Error al actualizar el cobro');
@@ -452,15 +462,12 @@ const InvoiceCollections: React.FC = () => {
 
   const handleDeleteCobro = async (cobroId: string) => {
     if (!confirm('¿Está seguro de eliminar este cobro?')) return;
-
     try {
       const { error } = await supabase
         .from('cobros')
         .delete()
         .eq('id', cobroId);
-
       if (error) throw error;
-
       setSuccess('Cobro eliminado exitosamente');
       loadCobros();
       loadEstadoCuentaClientes();
@@ -483,6 +490,14 @@ const InvoiceCollections: React.FC = () => {
     }
   };
 
+  // ✅ FUNCIÓN PARA OBTENER COLOR DEL SALDO SEGÚN EL TIPO
+  const getSaldoColor = (tipoFactura: string, saldo: number) => {
+    if (esNotaCredito(tipoFactura)) {
+      return saldo < 0 ? 'text-green-600' : 'text-red-600'; // Verde para NC disponible, rojo si ya se aplicó
+    }
+    return saldo > 0 ? 'text-red-600' : 'text-green-600'; // Rojo para deuda, verde para pagado
+  };
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-AR', {
       style: 'currency',
@@ -495,24 +510,20 @@ const InvoiceCollections: React.FC = () => {
   };
 
   const exportarRecibo = (cobro: Cobro) => {
-  const reciboData = `
+    const reciboData = `
 RECIBO DE COBRO
 N° ${cobro.numero_recibo}
-
 Cliente: ${cobro.factura.cliente.tipo_cliente === 'EMPRESA' 
   ? `${cobro.factura.cliente.empresa || cobro.factura.cliente.nombre} (${cobro.factura.cliente.cuit})`
   : `${cobro.factura.cliente.apellido}, ${cobro.factura.cliente.nombre} (DNI: ${cobro.factura.cliente.dni})`}
-
 Factura: ${cobro.factura.numero_factura} (Tipo ${cobro.factura.tipo_factura})
 Fecha: ${formatDate(cobro.fecha_cobro)}
 Monto Cobrado: ${formatCurrency(cobro.monto_cobrado)}
 Forma de Cobro: ${cobro.forma_cobro.nombre}
 ${cobro.numero_operacion ? `N° Operación: ${cobro.numero_operacion}` : ''}
 ${cobro.observaciones ? `Observaciones: ${cobro.observaciones}` : ''}
-
 Fecha de emisión: ${formatDate(new Date().toISOString())}
     `;
-
     const blob = new Blob([reciboData], { type: 'text/plain;charset=utf-8' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
@@ -529,18 +540,79 @@ Fecha de emisión: ${formatDate(new Date().toISOString())}
     setSuccess(null);
   };
 
-const getClienteNombreEstado = (estado: EstadoCuentaCliente) => {
-  if (estado.tipo_cliente === 'EMPRESA') {
-    return estado.empresa || `${estado.cliente_nombre} ${estado.cliente_apellido}`;
-  }
-  return `${estado.cliente_apellido}, ${estado.cliente_nombre}`;
-};
+  const getClienteNombreEstado = (estado: EstadoCuentaCliente) => {
+    if (estado.tipo_cliente === 'EMPRESA') {
+      return estado.empresa || `${estado.cliente_nombre} ${estado.cliente_apellido}`;
+    }
+    return `${estado.cliente_apellido}, ${estado.cliente_nombre}`;
+  };
 
-const getClienteIdentificacionEstado = (estado: EstadoCuentaCliente) => {
-  if (estado.tipo_cliente === 'EMPRESA') {
-    return estado.cliente_cuit || estado.cliente_dni;
+  const getClienteIdentificacionEstado = (estado: EstadoCuentaCliente) => {
+    if (estado.tipo_cliente === 'EMPRESA') {
+      return estado.cliente_cuit || estado.cliente_dni;
+    }
+    return estado.cliente_dni;
+  };
+
+  const actualizarEstadosFacturasBalanceadas = async () => {
+  try {
+    // Paso 1: Obtener clientes que tienen saldo 0 (balanceados)
+    const { data: facturasData, error: facturaError } = await supabase
+      .from('facturacion')
+      .select('cliente_id, tipo_factura, total_factura, id, estado_cobro')
+      .eq('eliminado', false);
+
+    if (facturaError) {
+      console.error('Error obteniendo facturas:', facturaError);
+      return;
+    }
+
+    // Paso 2: Agrupar por cliente y calcular saldos
+    const saldosPorCliente: { [key: string]: { saldo: number; facturas: any[] } } = {};
+    
+    facturasData?.forEach(factura => {
+      if (!saldosPorCliente[factura.cliente_id]) {
+        saldosPorCliente[factura.cliente_id] = { saldo: 0, facturas: [] };
+      }
+      
+      // Calcular impacto en el saldo
+      const esNotaCredito = ['NCA', 'NCB', 'NCC'].includes(factura.tipo_factura);
+      const impacto = esNotaCredito ? -factura.total_factura : factura.total_factura;
+      
+      saldosPorCliente[factura.cliente_id].saldo += impacto;
+      saldosPorCliente[factura.cliente_id].facturas.push(factura);
+    });
+
+    // Paso 3: Identificar clientes balanceados (saldo = 0) y actualizar sus facturas
+    for (const [clienteId, datos] of Object.entries(saldosPorCliente)) {
+      if (Math.abs(datos.saldo) < 0.01) { // Considerar saldo 0 (con tolerancia para decimales)
+        // Este cliente está balanceado, actualizar todas sus facturas pendientes
+        const facturasPendientes = datos.facturas.filter(f => f.estado_cobro === 'PENDIENTE');
+        
+        for (const factura of facturasPendientes) {
+          const { error: updateError } = await supabase
+            .from('facturacion')
+            .update({
+              estado_cobro: 'COBRADO_TOTAL',
+              monto_cobrado: factura.total_factura
+            })
+            .eq('id', factura.id);
+
+          if (updateError) {
+            console.error(`Error actualizando factura ${factura.id}:`, updateError);
+          }
+        }
+        
+        if (facturasPendientes.length > 0) {
+          console.log(`Cliente ${clienteId}: ${facturasPendientes.length} facturas balanceadas`);
+        }
+      }
+    }
+
+    console.log('Estados de facturas balanceadas actualizados correctamente');
+  } catch (error) {
+    console.error('Error en actualizarEstadosFacturasBalanceadas:', error);
   }
-  return estado.cliente_dni;
 };
 
   return (
@@ -604,14 +676,14 @@ const getClienteIdentificacionEstado = (estado: EstadoCuentaCliente) => {
                       <SelectValue placeholder="Seleccione un cliente" />
                     </SelectTrigger>
                     <SelectContent>
-  {clientes.map((cliente) => (
-    <SelectItem key={cliente.id} value={cliente.id}>
-      {cliente.tipo_cliente === 'EMPRESA' 
-        ? `${cliente.empresa || cliente.nombre} (${cliente.cuit})` 
-        : `${cliente.apellido}, ${cliente.nombre} (${cliente.dni})`}
-    </SelectItem>
-  ))}
-</SelectContent>
+                      {clientes.map((cliente) => (
+                        <SelectItem key={cliente.id} value={cliente.id}>
+                          {cliente.tipo_cliente === 'EMPRESA' 
+                            ? `${cliente.empresa || cliente.nombre} (${cliente.cuit})` 
+                            : `${cliente.apellido}, ${cliente.nombre} (${cliente.dni})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
                   </Select>
                 </div>
 
@@ -657,15 +729,32 @@ const getClienteIdentificacionEstado = (estado: EstadoCuentaCliente) => {
                                       />
                                     </td>
                                     <td className="p-3 font-medium">{factura.numero_factura}</td>
-                                    <td className="p-3">{factura.tipo_factura}</td>
+                                    <td className="p-3">
+                                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                        esNotaCredito(factura.tipo_factura) 
+                                          ? 'bg-green-100 text-green-800' 
+                                          : 'bg-blue-100 text-blue-800'
+                                      }`}>
+                                        {factura.tipo_factura}
+                                        {esNotaCredito(factura.tipo_factura) && ' 💳'}
+                                      </span>
+                                    </td>
                                     <td className="p-3">{formatDate(factura.fecha_emision)}</td>
                                     <td className="p-3">
                                       {factura.fecha_vencimiento ? formatDate(factura.fecha_vencimiento) : '-'}
                                     </td>
-                                    <td className="text-right p-3">{formatCurrency(factura.total_factura)}</td>
+                                    <td className="text-right p-3">
+                                      <span className={esNotaCredito(factura.tipo_factura) ? 'text-green-600' : ''}>
+                                        {formatCurrency(factura.total_factura)}
+                                        {esNotaCredito(factura.tipo_factura) && ' (NC)'}
+                                      </span>
+                                    </td>
                                     <td className="text-right p-3">{formatCurrency(factura.monto_cobrado)}</td>
                                     <td className="text-right p-3 font-medium">
-                                      {formatCurrency(factura.saldo_pendiente)}
+                                      <span className={getSaldoColor(factura.tipo_factura, factura.saldo_pendiente)}>
+                                        {formatCurrency(Math.abs(factura.saldo_pendiente))}
+                                        {esNotaCredito(factura.tipo_factura) && ' (NC)'}
+                                      </span>
                                     </td>
                                     <td className="p-3">
                                       <Badge className={getEstadoColor(factura.estado_cobro)}>
@@ -677,10 +766,21 @@ const getClienteIdentificacionEstado = (estado: EstadoCuentaCliente) => {
                               </tbody>
                             </table>
                           </div>
+                          
                           {selectedFacturas.length > 0 && (
                             <div className="mt-4 flex justify-between items-center p-4 bg-gray-50 rounded-lg">
-                              <div className="text-lg font-semibold">
-                                Total a Cobrar: {formatCurrency(calcularTotalSeleccionado())}
+                              <div className="space-y-1">
+                                <div className="text-lg font-semibold">
+                                  Total a Procesar: {formatCurrency(calcularTotalSeleccionado())}
+                                </div>
+                                {selectedFacturas.some(id => {
+                                  const factura = facturasCliente.find(f => f.id === id);
+                                  return factura && esNotaCredito(factura.tipo_factura);
+                                }) && (
+                                  <div className="text-sm text-green-600">
+                                    ✅ Incluye notas de crédito que reducirán la deuda del cliente
+                                  </div>
+                                )}
                               </div>
                               <Button onClick={() => setIsDialogOpen(true)}>
                                 <Plus className="h-4 w-4 mr-2" />
@@ -726,27 +826,36 @@ const getClienteIdentificacionEstado = (estado: EstadoCuentaCliente) => {
                             <tr key={cobro.id} className="border-b hover:bg-gray-50">
                               <td className="p-3 font-medium">{cobro.numero_recibo}</td>
                               <td className="p-3">
-  <div>
-    <div className="font-medium">
-      {cobro.factura.cliente.tipo_cliente === 'EMPRESA' 
-        ? cobro.factura.cliente.empresa || cobro.factura.cliente.nombre
-        : `${cobro.factura.cliente.apellido}, ${cobro.factura.cliente.nombre}`}
-    </div>
-    <div className="text-sm text-gray-500">
-      {cobro.factura.cliente.tipo_cliente === 'EMPRESA' 
-        ? cobro.factura.cliente.cuit 
-        : cobro.factura.cliente.dni}
-    </div>
-  </div>
-</td>
+                                <div>
+                                  <div className="font-medium">
+                                    {cobro.factura.cliente.tipo_cliente === 'EMPRESA' 
+                                      ? cobro.factura.cliente.empresa || cobro.factura.cliente.nombre
+                                      : `${cobro.factura.cliente.apellido}, ${cobro.factura.cliente.nombre}`}
+                                  </div>
+                                  <div className="text-sm text-gray-500">
+                                    {cobro.factura.cliente.tipo_cliente === 'EMPRESA' 
+                                      ? cobro.factura.cliente.cuit 
+                                      : cobro.factura.cliente.dni}
+                                  </div>
+                                </div>
+                              </td>
                               <td className="p-3">
                                 <div>
-                                  <div className="font-medium">{cobro.factura.numero_factura}</div>
+                                  <div className="font-medium flex items-center gap-2">
+                                    {cobro.factura.numero_factura}
+                                    {esNotaCredito(cobro.factura.tipo_factura) && (
+                                      <span className="text-green-600 text-xs">💳 NC</span>
+                                    )}
+                                  </div>
                                   <div className="text-sm text-gray-500">Tipo {cobro.factura.tipo_factura}</div>
                                 </div>
                               </td>
                               <td className="p-3">{formatDate(cobro.fecha_cobro)}</td>
-                              <td className="text-right p-3">{formatCurrency(cobro.monto_cobrado)}</td>
+                              <td className="text-right p-3">
+                                <span className={esNotaCredito(cobro.factura.tipo_factura) ? 'text-green-600' : ''}>
+                                  {formatCurrency(cobro.monto_cobrado)}
+                                </span>
+                              </td>
                               <td className="p-3">{cobro.forma_cobro.nombre}</td>
                               <td className="p-3">
                                 <div className="flex gap-1">
@@ -764,7 +873,7 @@ const getClienteIdentificacionEstado = (estado: EstadoCuentaCliente) => {
                                     onClick={() => {
                                       setSelectedCobro(cobro);
                                       setCobroForm({
-                                        formaPagoId: '', // Se necesitaría el ID de la forma de pago
+                                        formaPagoId: '',
                                         numeroOperacion: cobro.numero_operacion || '',
                                         observaciones: cobro.observaciones || '',
                                         fechaCobro: cobro.fecha_cobro,
@@ -801,6 +910,9 @@ const getClienteIdentificacionEstado = (estado: EstadoCuentaCliente) => {
               <Card>
                 <CardHeader>
                   <CardTitle>Estado de Cuenta por Cliente</CardTitle>
+                  <div className="text-sm text-gray-600">
+                    ✅ Los valores ahora reflejan correctamente el impacto de las notas de crédito
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {estadoCuentaClientes.length === 0 ? (
@@ -811,15 +923,14 @@ const getClienteIdentificacionEstado = (estado: EstadoCuentaCliente) => {
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {estadoCuentaClientes.map((estado) => (
-                        <Card key={estado.cliente_id}>
+                        <Card key={estado.cliente_id} className="relative">
                           <CardHeader>
                             <CardTitle className="text-lg">
-  {getClienteNombreEstado(estado)}
-</CardTitle>
-<p className="text-sm text-gray-500">
-  {estado.tipo_cliente === 'EMPRESA' ? 'CUIT' : 'DNI'}: {getClienteIdentificacionEstado(estado)}
-</p>
-                            <p className="text-sm text-gray-500">DNI: {estado.cliente_dni}</p>
+                              {getClienteNombreEstado(estado)}
+                            </CardTitle>
+                            <p className="text-sm text-gray-500">
+                              {estado.tipo_cliente === 'EMPRESA' ? 'CUIT' : 'DNI'}: {getClienteIdentificacionEstado(estado)}
+                            </p>
                           </CardHeader>
                           <CardContent>
                             <div className="space-y-2">
@@ -833,8 +944,20 @@ const getClienteIdentificacionEstado = (estado: EstadoCuentaCliente) => {
                               </div>
                               <div className="flex justify-between border-t pt-2">
                                 <span className="font-semibold">Saldo Pendiente:</span>
-                                <span className="font-semibold text-red-600">{formatCurrency(estado.saldo_pendiente)}</span>
+                                <span className={`font-semibold ${
+                                  estado.saldo_pendiente > 0 ? 'text-red-600' : 
+                                  estado.saldo_pendiente < 0 ? 'text-green-600' : 'text-gray-600'
+                                }`}>
+                                  {formatCurrency(estado.saldo_pendiente)}
+                                </span>
                               </div>
+                              {estado.saldo_pendiente === 0 && (
+                                <div className="bg-green-50 border border-green-200 rounded-md p-2 mt-2">
+                                  <div className="text-green-800 text-sm font-medium text-center">
+                                    ✅ Cuenta balanceada
+                                  </div>
+                                </div>
+                              )}
                               <div className="text-sm text-gray-500 pt-2">
                                 <div>Facturas totales: {estado.cantidad_facturas}</div>
                                 <div>Pendientes: {estado.facturas_pendientes}</div>
@@ -871,7 +994,16 @@ const getClienteIdentificacionEstado = (estado: EstadoCuentaCliente) => {
                 disabled
                 className="bg-gray-50"
               />
+              {selectedFacturas.some(id => {
+                const factura = facturasCliente.find(f => f.id === id);
+                return factura && esNotaCredito(factura.tipo_factura);
+              }) && (
+                <div className="text-sm text-green-600 bg-green-50 p-2 rounded">
+                  ℹ️ Se incluyen notas de crédito que reducirán la deuda del cliente
+                </div>
+              )}
             </div>
+            
             {selectedFacturas.length === 1 && (
               <div className="space-y-2">
                 <Label>Monto Parcial (opcional)</Label>
@@ -887,6 +1019,7 @@ const getClienteIdentificacionEstado = (estado: EstadoCuentaCliente) => {
                 </p>
               </div>
             )}
+            
             <div className="space-y-2">
               <Label>Forma de Cobro</Label>
               <Select value={cobroForm.formaPagoId} onValueChange={(value) => 
@@ -904,6 +1037,7 @@ const getClienteIdentificacionEstado = (estado: EstadoCuentaCliente) => {
                 </SelectContent>
               </Select>
             </div>
+            
             <div className="space-y-2">
               <Label>Fecha de Cobro</Label>
               <Input
@@ -912,6 +1046,7 @@ const getClienteIdentificacionEstado = (estado: EstadoCuentaCliente) => {
                 onChange={(e) => setCobroForm({...cobroForm, fechaCobro: e.target.value})}
               />
             </div>
+            
             <div className="space-y-2">
               <Label>Número de Operación (opcional)</Label>
               <Input
@@ -920,6 +1055,7 @@ const getClienteIdentificacionEstado = (estado: EstadoCuentaCliente) => {
                 onChange={(e) => setCobroForm({...cobroForm, numeroOperacion: e.target.value})}
               />
             </div>
+            
             <div className="space-y-2">
               <Label>Observaciones</Label>
               <Input
@@ -929,6 +1065,7 @@ const getClienteIdentificacionEstado = (estado: EstadoCuentaCliente) => {
               />
             </div>
           </div>
+          
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
               Cancelar
@@ -982,6 +1119,7 @@ const getClienteIdentificacionEstado = (estado: EstadoCuentaCliente) => {
               />
             </div>
           </div>
+          
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
               Cancelar
