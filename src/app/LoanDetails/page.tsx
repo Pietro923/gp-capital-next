@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 import React, { useState, useEffect } from 'react';
 import {
@@ -16,10 +17,11 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Download, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
+import { Search, Download, AlertCircle, ChevronDown, ChevronRight, Edit, Trash2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from '@/utils/supabase/client';
 import { PagarDialog } from "@/components/PagarDialog";
+import { EditarPrestamoDialog } from "@/components/EditarPrestamoDialog";
 
 // Interfaces actualizadas según el esquema de Supabase
 interface Cliente {
@@ -77,18 +79,18 @@ const LoanDetails = () => {
   const [error, setError] = useState<string | null>(null);
   const [expandedPrestamos, setExpandedPrestamos] = useState<string[]>([]);
   
-  // Estado mejorado para el dialog de pago
-  const [dialogState, setDialogState] = useState<{
-    open: boolean;
-    cuotaData: {
-      cuotaId: string;
-      prestamoId: string;
-      numeroCuota: number;
-      montoCuota: number;
-    } | null;
-  }>({
+  // ✅ SEPARAR LOS ESTADOS DE LOS DIALOGS COMPLETAMENTE
+  const [pagarDialog, setPagarDialog] = useState({
     open: false,
-    cuotaData: null
+    cuotaId: '',
+    prestamoId: '',
+    numeroCuota: 0,
+    montoCuota: 0
+  });
+
+  const [editarDialog, setEditarDialog] = useState({
+    open: false,
+    prestamo: null as PrestamoConCuotas | null
   });
 
   // Función para obtener el nombre correcto del cliente
@@ -105,34 +107,38 @@ const LoanDetails = () => {
     return `${dia}/${mes}/${año}`;
   };
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const { data: prestamosData, error: prestamosError } = await supabase
-        .from('prestamos')
-        .select(`
-          *,
-          cliente:clientes!inner(*),
-          cuotas(*)
-        `)
-        .eq('cliente.eliminado', false) // Solo clientes no eliminados
-        .order('fecha_inicio', { ascending: false });
+ const fetchData = async () => {
+  try {
+    setLoading(true);
+    const { data: prestamosData, error: prestamosError } = await supabase
+      .from('prestamos')
+      .select(`
+        *,
+        cliente:clientes!inner(*),
+        cuotas(*)
+      `)
+      .eq('cliente.eliminado', false) // Solo clientes no eliminados
+      .eq('eliminado', false) // ✅ NUEVO: Solo préstamos no eliminados
+      .order('fecha_inicio', { ascending: false });
 
-      if (prestamosError) throw prestamosError;
+    if (prestamosError) throw prestamosError;
 
-      const prestamosProcessed: PrestamoConCuotas[] = prestamosData.map(prestamo => ({
-        ...prestamo,
-        cuotas_pagadas: prestamo.cuotas.filter((c: { estado: string; }) => c.estado === 'PAGADO').length
-      }));
+    const prestamosProcessed: PrestamoConCuotas[] = prestamosData.map(prestamo => ({
+      ...prestamo,
+      // ✅ FILTRAR CUOTAS NO ELIMINADAS al contar pagadas
+      cuotas: prestamo.cuotas.filter((c: any) => !c.eliminado), // Solo cuotas no eliminadas
+      cuotas_pagadas: prestamo.cuotas
+        .filter((c: any) => !c.eliminado && c.estado === 'PAGADO').length
+    }));
 
-      setPrestamos(prestamosProcessed);
-    } catch (err) {
-      console.error('Error al cargar datos:', err);
-      setError('Error al cargar los datos de préstamos');
-    } finally {
-      setLoading(false);
-    }
-  };
+    setPrestamos(prestamosProcessed);
+  } catch (err) {
+    console.error('Error al cargar datos:', err);
+    setError('Error al cargar los datos de préstamos');
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     fetchData();
@@ -149,18 +155,168 @@ const LoanDetails = () => {
     }
   };
 
-  // Función mejorada para manejar el click de pagar
+  // ✅ FUNCIÓN PARA OBTENER COLOR DEL ESTADO DEL PRÉSTAMO
+  const getEstadoPrestamoColor = (estado: Prestamo['estado']) => {
+    switch (estado) {
+      case 'COMPLETADO':
+        return 'text-green-600 bg-green-100';
+      case 'CANCELADO':
+        return 'text-red-600 bg-red-100';
+      default:
+        return 'text-blue-600 bg-blue-100';
+    }
+  };
+
+  // ✅ FUNCIONES LIMPIAS PARA MANEJAR DIALOGS
   const handlePagarClick = (cuota: Cuota, prestamoId: string) => {
-    setDialogState({
+    setPagarDialog({
       open: true,
-      cuotaData: {
-        cuotaId: cuota.id,
-        prestamoId: prestamoId,
-        numeroCuota: cuota.numero_cuota,
-        montoCuota: cuota.monto
-      }
+      cuotaId: cuota.id,
+      prestamoId: prestamoId,
+      numeroCuota: cuota.numero_cuota,
+      montoCuota: cuota.monto
     });
   };
+
+  const handleEditarClick = (prestamo: PrestamoConCuotas) => {
+    setEditarDialog({
+      open: true,
+      prestamo: prestamo
+    });
+  };
+
+  // ✅ FUNCIONES PARA CERRAR DIALOGS
+  const cerrarPagarDialog = () => {
+    setPagarDialog({
+      open: false,
+      cuotaId: '',
+      prestamoId: '',
+      numeroCuota: 0,
+      montoCuota: 0
+    });
+  };
+
+  const cerrarEditarDialog = () => {
+    setEditarDialog({
+      open: false,
+      prestamo: null
+    });
+  };
+
+  // ✅ FUNCIONES PARA CONFIRMAR ACCIONES
+  const confirmarPago = () => {
+    fetchData();
+    cerrarPagarDialog();
+  };
+
+  const confirmarEdicion = () => {
+    fetchData();
+    cerrarEditarDialog();
+  };
+
+  // ✅ NUEVA FUNCIÓN PARA ELIMINAR PRÉSTAMO CON SOFT DELETE Y CONFIRMACIÓN DOBLE
+const handleEliminarClick = async (prestamo: PrestamoConCuotas) => {
+  // Verificar si tiene cuotas pagadas
+  const cuotasPagadas = prestamo.cuotas.filter(c => c.estado === 'PAGADO').length;
+  
+  // ✅ PRIMERA CONFIRMACIÓN
+  let confirmar1: boolean;
+  if (cuotasPagadas > 0) {
+    confirmar1 = confirm(
+      `⚠️ ATENCIÓN: Este préstamo tiene ${cuotasPagadas} cuotas pagadas.\n\n` +
+      `¿Está seguro de eliminarlo?\n\n` +
+      `Cliente: ${getNombreCliente(prestamo.cliente)}\n` +
+      `Monto: $${prestamo.monto_total.toLocaleString('es-AR')}`
+    );
+  } else {
+    confirmar1 = confirm(
+      `¿Está seguro de eliminar este préstamo?\n\n` +
+      `Cliente: ${getNombreCliente(prestamo.cliente)}\n` +
+      `Monto: $${prestamo.monto_total.toLocaleString('es-AR')}`
+    );
+  }
+  
+  if (!confirmar1) return;
+
+  // ✅ SEGUNDA CONFIRMACIÓN (MÁS SERIA)
+  const confirmar2 = confirm(
+    `⚠️ ÚLTIMA CONFIRMACIÓN\n\n` +
+    `El préstamo será marcado como eliminado.\n` +
+    `Los datos se conservarán para auditoría.\n\n` +
+    `¿Continuar con la eliminación?`
+  );
+  
+  if (!confirmar2) return;
+
+  try {
+    setLoading(true);
+    
+    const fechaEliminacion = new Date().toISOString();
+
+    // ✅ SOFT DELETE - Solo marcar como eliminado
+    
+    // 1. Marcar pagos como eliminados
+    const { error: pagosError } = await supabase
+      .from('pagos')
+      .update({ 
+        eliminado: true, 
+        fecha_eliminacion: fechaEliminacion 
+      })
+      .eq('prestamo_id', prestamo.id)
+      .eq('eliminado', false); // Solo actualizar los no eliminados
+
+    if (pagosError) throw pagosError;
+
+    // 2. Marcar cuotas como eliminadas
+    const { error: cuotasError } = await supabase
+      .from('cuotas')
+      .update({ 
+        eliminado: true, 
+        fecha_eliminacion: fechaEliminacion 
+      })
+      .eq('prestamo_id', prestamo.id)
+      .eq('eliminado', false); // Solo actualizar las no eliminadas
+
+    if (cuotasError) throw cuotasError;
+
+    // 3. Marcar préstamo como eliminado
+    const { error: prestamoError } = await supabase
+      .from('prestamos')
+      .update({ 
+        eliminado: true, 
+        fecha_eliminacion: fechaEliminacion 
+      })
+      .eq('id', prestamo.id);
+
+    if (prestamoError) throw prestamoError;
+
+    // 4. Registrar movimiento de reversión en caja (solo si tenía pagos)
+    if (cuotasPagadas > 0) {
+      const totalPagado = prestamo.cuotas
+        .filter(c => c.estado === 'PAGADO')
+        .reduce((sum, c) => sum + c.monto, 0);
+
+      await supabase
+        .from('movimientos_caja')
+        .insert([{
+          tipo: 'EGRESO',
+          concepto: `Reversión por eliminación de préstamo (SOFT DELETE) - ${getNombreCliente(prestamo.cliente)} - $${totalPagado.toLocaleString('es-AR')}`,
+          monto: totalPagado
+        }]);
+    }
+
+    // 5. Refrescar datos
+    await fetchData();
+    
+    alert('✅ Préstamo eliminado exitosamente\n\nNota: Los datos se conservan en la base de datos para auditoría.');
+    
+  } catch (err) {
+    console.error('Error eliminando préstamo:', err);
+    alert('❌ Error al eliminar el préstamo. Intente nuevamente.');
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Filtro mejorado que incluye búsqueda por documento
   const filteredPrestamos = prestamos.filter(prestamo => {
@@ -278,7 +434,9 @@ const LoanDetails = () => {
                     <TableHead>Documento</TableHead>
                     <TableHead className="text-right">Monto Total</TableHead>
                     <TableHead className="text-right">Cuotas Pagadas</TableHead>
+                    <TableHead>Estado</TableHead>
                     <TableHead>Progreso</TableHead>
+                    <TableHead className="w-[100px]">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -309,6 +467,11 @@ const LoanDetails = () => {
                           {prestamo.cuotas_pagadas}/{prestamo.cantidad_cuotas}
                         </TableCell>
                         <TableCell>
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getEstadoPrestamoColor(prestamo.estado)}`}>
+                            {prestamo.estado}
+                          </span>
+                        </TableCell>
+                        <TableCell>
                           <div className="w-full bg-slate-200 rounded-full h-2.5">
                             <div 
                               className="bg-blue-600 h-2.5 rounded-full"
@@ -316,6 +479,28 @@ const LoanDetails = () => {
                             ></div>
                           </div>
                         </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+ <div className="flex items-center gap-2">
+   <Button
+     size="sm"
+     variant="outline"
+     onClick={() => handleEditarClick(prestamo)}
+     className="h-8 px-3 hover:bg-blue-50"
+   >
+     <Edit className="h-3 w-3 mr-1" />
+     Editar
+   </Button>
+   <Button
+     size="sm"
+     variant="outline"
+     onClick={() => handleEliminarClick(prestamo)}
+     className="h-8 px-3 text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+   >
+     <Trash2 className="h-3 w-3 mr-1" />
+     Eliminar
+   </Button>
+ </div>
+</TableCell>
                       </TableRow>
                       {expandedPrestamos.includes(prestamo.id) && prestamo.cuotas.map(cuota => (
                         <TableRow key={cuota.id} className="bg-slate-50">
@@ -336,7 +521,7 @@ const LoanDetails = () => {
                               formatearFecha(cuota.fecha_pago) : 
                               '-'}
                           </TableCell>
-                          <TableCell>
+                          <TableCell colSpan={3}>
                             <div className="flex items-center space-x-2">
                               <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getEstadoColor(cuota.estado)}`}>
                                 {cuota.estado}
@@ -363,7 +548,7 @@ const LoanDetails = () => {
               </Table>
             </div>
             
-            {/* Vista de tarjetas para móviles */}
+            {/* Vista de tarjetas para móviles - ACTUALIZADA */}
             <div className="block md:hidden space-y-4">
               {filteredPrestamos.map(prestamo => (
                 <div key={prestamo.id} className="border rounded-lg shadow-sm overflow-hidden">
@@ -383,12 +568,39 @@ const LoanDetails = () => {
                             : `DNI: ${prestamo.cliente.dni || 'Sin DNI'}`
                           }
                         </div>
+                        <div className="text-xs">
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getEstadoPrestamoColor(prestamo.estado)}`}>
+                            {prestamo.estado}
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="font-medium">${prestamo.monto_total.toLocaleString('es-AR')}</div>
                       <div className="text-sm text-slate-500">
                         {prestamo.cuotas_pagadas}/{prestamo.cantidad_cuotas} cuotas
+                      </div>
+                      <div className="flex gap-1 mt-2">
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditarClick(prestamo);
+                          }}
+                        >
+                          <Edit className="h-3 w-3" />
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEliminarClick(prestamo);
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3 text-red-600" />
+                        </Button>
                       </div>
                     </div>
                   </div>
@@ -454,19 +666,23 @@ const LoanDetails = () => {
         </CardContent>
       </Card>
 
-      {/* Dialog de pago - Fuera del map para evitar problemas */}
-      {dialogState.cuotaData && (
-        <PagarDialog
-          open={dialogState.open}
-          onOpenChange={(open) => setDialogState(prev => ({ ...prev, open }))}
-          onConfirm={() => {
-            fetchData();
-            setDialogState({ open: false, cuotaData: null });
-          }}
-          numeroCuota={dialogState.cuotaData.numeroCuota}
-          cuotaId={dialogState.cuotaData.cuotaId}
-          prestamoId={dialogState.cuotaData.prestamoId}
-          montoCuota={dialogState.cuotaData.montoCuota}
+      {/* ✅ RENDERIZADO LIMPIO DE DIALOGS - SIEMPRE RENDERIZAR, CONTROLAR SOLO CON 'open' */}
+      <PagarDialog
+        open={pagarDialog.open}
+        onOpenChange={(open) => !open && cerrarPagarDialog()}
+        onConfirm={confirmarPago}
+        numeroCuota={pagarDialog.numeroCuota}
+        cuotaId={pagarDialog.cuotaId}
+        prestamoId={pagarDialog.prestamoId}
+        montoCuota={pagarDialog.montoCuota}
+      />
+
+      {editarDialog.prestamo && (
+        <EditarPrestamoDialog
+          open={editarDialog.open}
+          onOpenChange={(open) => !open && cerrarEditarDialog()}
+          onConfirm={confirmarEdicion}
+          prestamo={editarDialog.prestamo}
         />
       )}
     </div>
