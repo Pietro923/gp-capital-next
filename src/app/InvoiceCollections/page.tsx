@@ -541,22 +541,133 @@ const handleGenerarCobro = async () => {
     }
   };
 
-  const handleDeleteCobro = async (cobroId: string) => {
-    if (!confirm('¿Está seguro de eliminar este cobro?')) return;
-    try {
-      const { error } = await supabase
-        .from('cobros')
-        .delete()
-        .eq('id', cobroId);
-      if (error) throw error;
-      setSuccess('Cobro eliminado exitosamente');
-      loadCobros();
-      loadEstadoCuentaClientes();
-    } catch (error) {
-      console.error('Error deleting cobro:', error);
-      setError('Error al eliminar el cobro');
+  // ✅ FUNCIÓN CORREGIDA PARA ELIMINAR COBROS
+const handleDeleteCobro = async (cobroId: string) => {
+  if (!confirm('¿Está seguro de eliminar este cobro?\n\nEsta acción revertirá el estado de la factura correspondiente.')) return;
+  
+  setLoading(true);
+  try {
+    // 1. OBTENER DATOS DEL COBRO ANTES DE ELIMINARLO
+    const { data: cobroData, error: cobroError } = await supabase
+      .from('cobros')
+      .select(`
+        *,
+        facturacion (
+          id,
+          numero_factura,
+          tipo_factura,
+          total_factura,
+          monto_cobrado,
+          estado_cobro,
+          clientes (
+            id,
+            nombre,
+            apellido,
+            empresa,
+            tipo_cliente
+          )
+        ),
+        formas_pago (nombre)
+      `)
+      .eq('id', cobroId)
+      .single();
+
+    if (cobroError) throw cobroError;
+    
+    if (!cobroData) {
+      throw new Error('No se encontró el cobro a eliminar');
     }
-  };
+
+    const factura = cobroData.facturacion as any;
+    const montoCobro = cobroData.monto_cobrado;
+
+    // 2. REVERTIR EL ESTADO DE LA FACTURA (si existe una factura asociada)
+    if (cobroData.factura_id && factura) {
+      const nuevoMontoCobrado = factura.monto_cobrado - montoCobro;
+      
+      // Determinar nuevo estado
+      let nuevoEstado = 'PENDIENTE';
+      if (nuevoMontoCobrado > 0) {
+        nuevoEstado = nuevoMontoCobrado >= factura.total_factura ? 'COBRADO_TOTAL' : 'COBRADO_PARCIAL';
+      }
+
+      const { error: facturaError } = await supabase
+        .from('facturacion')
+        .update({
+          monto_cobrado: Math.max(0, nuevoMontoCobrado), // No permitir valores negativos
+          estado_cobro: nuevoEstado
+        })
+        .eq('id', cobroData.factura_id);
+
+      if (facturaError) throw facturaError;
+    }
+
+    // 3. REGISTRAR MOVIMIENTO DE REVERSIÓN
+    const formaPago = cobroData.formas_pago as any;
+    const esEfectivo = formaPago?.nombre.toLowerCase().includes('efectivo') || 
+                     formaPago?.nombre.toLowerCase().includes('caja');
+
+    // Obtener nombre del cliente para el concepto
+    let nombreCliente = 'Cliente no identificado';
+    if (factura?.clientes) {
+      const cliente = factura.clientes;
+      nombreCliente = cliente.tipo_cliente === 'EMPRESA' 
+        ? cliente.empresa || cliente.nombre
+        : `${cliente.apellido}, ${cliente.nombre}`;
+    }
+
+    const conceptoReversion = `REVERSIÓN - Eliminación cobro ${cobroData.numero_recibo} - ${nombreCliente}${factura ? ` - Factura ${factura.numero_factura}` : ''}`;
+
+    if (esEfectivo) {
+      // Registrar egreso en caja (salida de dinero por reversión)
+      await supabase
+        .from('movimientos_caja')
+        .insert({
+          tipo: 'EGRESO',
+          concepto: conceptoReversion,
+          monto: montoCobro,
+          fecha_movimiento: new Date().toISOString().split('T')[0]
+        });
+    } else {
+      // Registrar egreso bancario
+      await supabase
+        .from('movimientos_banco')
+        .insert({
+          tipo: 'EGRESO',
+          concepto: conceptoReversion,
+          monto: montoCobro,
+          numero_operacion: cobroData.numero_operacion,
+          fecha_movimiento: new Date().toISOString().split('T')[0]
+        });
+    }
+
+    // 4. ELIMINAR EL COBRO
+    const { error: deleteError } = await supabase
+      .from('cobros')
+      .delete()
+      .eq('id', cobroId);
+
+    if (deleteError) throw deleteError;
+
+    // 5. ACTUALIZAR ESTADOS DE FACTURAS BALANCEADAS
+    await actualizarEstadosFacturasBalanceadas();
+
+    setSuccess(`Cobro ${cobroData.numero_recibo} eliminado exitosamente. La factura ha sido revertida al estado anterior.`);
+    
+    // Recargar datos
+    loadCobros();
+    loadEstadoCuentaClientes();
+    if (selectedCliente) {
+      loadFacturasCliente(selectedCliente);
+    }
+
+  } catch (error) {
+    console.error('Error deleting cobro:', error);
+    setError(`Error al eliminar el cobro: ${error instanceof Error ? error.message : 'Error desconocido'}`);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const getEstadoColor = (estado: string) => {
     switch (estado) {
