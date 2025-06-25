@@ -303,130 +303,211 @@ const InvoiceCollections: React.FC = () => {
 
   // ✅ FUNCIÓN CORREGIDA PARA CALCULAR TOTAL SELECCIONADO
   const calcularTotalSeleccionado = () => {
-    return facturasCliente
+  const totalFacturas = facturasCliente
+    .filter(factura => selectedFacturas.includes(factura.id))
+    .reduce((total, factura) => {
+      // Para notas de crédito, sumamos el valor absoluto ya que el usuario quiere "cobrar" la NC
+      return total + Math.abs(factura.saldo_pendiente);
+    }, 0);
+  
+  // ✅ NUEVO: Si hay sobrepago configurado, usar ese monto
+  return cobroForm.montoParcial > 0 ? cobroForm.montoParcial : totalFacturas;
+};
+
+ // ✅ 2. AGREGAR VALIDACIÓN Y LÓGICA PARA SOBREPAGOS
+const handleGenerarCobro = async () => {
+  if (selectedFacturas.length === 0 || !cobroForm.formaPagoId) {
+    setError('Debe seleccionar al menos una factura y una forma de cobro');
+    return;
+  }
+
+  const totalFacturas = facturasCliente
+    .filter(factura => selectedFacturas.includes(factura.id))
+    .reduce((total, factura) => total + Math.abs(factura.saldo_pendiente), 0);
+
+  const montoAPagar = cobroForm.montoParcial > 0 ? cobroForm.montoParcial : totalFacturas;
+  const esSobrepago = montoAPagar > totalFacturas;
+
+  // ✅ CONFIRMAR SOBREPAGO
+  if (esSobrepago) {
+    const diferencia = montoAPagar - totalFacturas;
+    const confirmar = confirm(
+      `⚠️ SOBREPAGO DETECTADO\n\n` +
+      `Monto a pagar: ${formatCurrency(montoAPagar)}\n` +
+      `Total adeudado: ${formatCurrency(totalFacturas)}\n` +
+      `Sobrepago: ${formatCurrency(diferencia)}\n\n` +
+      `El sobrepago quedará como CRÉDITO A FAVOR del cliente.\n\n` +
+      `¿Continuar?`
+    );
+    
+    if (!confirmar) return;
+  }
+
+  setLoading(true);
+  setError(null);
+  setSuccess(null);
+
+  try {
+    // Generar número de recibo
+    const { data: recibosCount, error: countError } = await supabase
+      .from('cobros')
+      .select('id', { count: 'exact' })
+      .like('numero_recibo', `REC-${new Date().getFullYear()}-%`);
+    if (countError) throw countError;
+    
+    const numeroRecibo = `REC-${new Date().getFullYear()}-${String((recibosCount?.length || 0) + 1).padStart(3, '0')}`;
+
+    let montoRestante = montoAPagar;
+
+    // ✅ PROCESAR FACTURAS EN ORDEN: PRIMERO LAS NORMALES, LUEGO LAS NC
+    const facturasOrdenadas = facturasCliente
       .filter(factura => selectedFacturas.includes(factura.id))
-      .reduce((total, factura) => {
-        // Para notas de crédito, sumamos el valor absoluto ya que el usuario quiere "cobrar" la NC
-        return total + Math.abs(factura.saldo_pendiente);
-      }, 0);
-  };
-
-  const handleGenerarCobro = async () => {
-    if (selectedFacturas.length === 0 || !cobroForm.formaPagoId) {
-      setError('Debe seleccionar al menos una factura y una forma de cobro');
-      return;
-    }
-    if (selectedFacturas.length > 1 && cobroForm.montoParcial > 0) {
-      setError('No se puede hacer cobro parcial para múltiples facturas');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      // Generar número de recibo
-      const { data: recibosCount, error: countError } = await supabase
-        .from('cobros')
-        .select('id', { count: 'exact' })
-        .like('numero_recibo', `REC-${new Date().getFullYear()}-%`);
-      if (countError) throw countError;
-      
-      const numeroRecibo = `REC-${new Date().getFullYear()}-${String((recibosCount?.length || 0) + 1).padStart(3, '0')}`;
-
-      // Procesar cada factura seleccionada
-      for (const facturaId of selectedFacturas) {
-        const factura = facturasCliente.find(f => f.id === facturaId);
-        if (!factura) continue;
-
-        // ✅ CALCULAR MONTO A COBRAR CONSIDERANDO NOTAS DE CRÉDITO
-        const montoCobrar = selectedFacturas.length === 1 && cobroForm.montoParcial > 0 
-          ? cobroForm.montoParcial 
-          : Math.abs(factura.saldo_pendiente); // Usar valor absoluto para NC
-
-        // Crear cobro
-        const { error: cobroError } = await supabase
-          .from('cobros')
-          .insert({
-            factura_id: facturaId,
-            numero_recibo: selectedFacturas.length === 1 ? numeroRecibo : `${numeroRecibo}-${facturaId.slice(-4)}`,
-            fecha_cobro: cobroForm.fechaCobro,
-            forma_cobro_id: cobroForm.formaPagoId,
-            monto_cobrado: montoCobrar,
-            numero_operacion: cobroForm.numeroOperacion,
-            observaciones: cobroForm.observaciones
-          });
-        if (cobroError) throw cobroError;
-
-        // ✅ ACTUALIZAR MONTO COBRADO EN LA FACTURA
-        const nuevoMontoCobrado = factura.monto_cobrado + montoCobrar;
-        const nuevoEstado = nuevoMontoCobrado >= factura.total_factura 
-          ? 'COBRADO_TOTAL' 
-          : nuevoMontoCobrado > 0 ? 'COBRADO_PARCIAL' : 'PENDIENTE';
-
-        const { error: facturaError } = await supabase
-          .from('facturacion')
-          .update({
-            monto_cobrado: nuevoMontoCobrado,
-            estado_cobro: nuevoEstado
-          })
-          .eq('id', facturaId);
-        if (facturaError) throw facturaError;
-
-        // ✅ REGISTRAR MOVIMIENTO CONSIDERANDO EL TIPO DE DOCUMENTO
-        const formaPago = formasPago.find(f => f.id === cobroForm.formaPagoId);
-        const esEfectivo = formaPago?.nombre.toLowerCase().includes('efectivo') || 
-                         formaPago?.nombre.toLowerCase().includes('caja');
-
-        const conceptoBase = `${esNotaCredito(factura.tipo_factura) ? 'Aplicación Nota de Crédito' : 'Cobro factura'} ${factura.numero_factura} - Cliente: ${factura.cliente.apellido}, ${factura.cliente.nombre}`;
-
-        if (esEfectivo) {
-          // Movimiento de caja
-          await supabase
-            .from('movimientos_caja')
-            .insert({
-              tipo: 'INGRESO',
-              concepto: conceptoBase,
-              monto: montoCobrar,
-              fecha_movimiento: cobroForm.fechaCobro
-            });
-        } else {
-          // Movimiento bancario
-          await supabase
-            .from('movimientos_banco')
-            .insert({
-              tipo: 'INGRESO',
-              concepto: conceptoBase,
-              monto: montoCobrar,
-              numero_operacion: cobroForm.numeroOperacion,
-              fecha_movimiento: cobroForm.fechaCobro
-            });
-        }
-      }
-
-      setSuccess(`Cobro registrado exitosamente con recibo ${numeroRecibo}`);
-      setIsDialogOpen(false);
-      setSelectedFacturas([]);
-      setCobroForm({
-        formaPagoId: '',
-        numeroOperacion: '',
-        observaciones: '',
-        fechaCobro: new Date().toISOString().split('T')[0],
-        montoParcial: 0
+      .sort((a, b) => {
+        // Primero facturas normales (positivas), luego notas de crédito (negativas)
+        if (esNotaCredito(a.tipo_factura) && !esNotaCredito(b.tipo_factura)) return 1;
+        if (!esNotaCredito(a.tipo_factura) && esNotaCredito(b.tipo_factura)) return -1;
+        return 0;
       });
-      
-      // Recargar datos
-      loadCobros();
-      loadFacturasCliente(selectedCliente);
-      loadEstadoCuentaClientes();
-    } catch (error) {
-      console.error('Error creating cobro:', error);
-      setError('Error al registrar el cobro');
-    } finally {
-      setLoading(false);
+
+    for (const factura of facturasOrdenadas) {
+      if (montoRestante <= 0) break;
+
+      const saldoFactura = Math.abs(factura.saldo_pendiente);
+      const montoCobrar = Math.min(montoRestante, saldoFactura);
+
+      // Crear cobro para esta factura
+      const { error: cobroError } = await supabase
+        .from('cobros')
+        .insert({
+          factura_id: factura.id,
+          numero_recibo: facturasOrdenadas.length === 1 ? numeroRecibo : `${numeroRecibo}-${factura.id.slice(-4)}`,
+          fecha_cobro: cobroForm.fechaCobro,
+          forma_cobro_id: cobroForm.formaPagoId,
+          monto_cobrado: montoCobrar,
+          numero_operacion: cobroForm.numeroOperacion,
+          observaciones: cobroForm.observaciones
+        });
+      if (cobroError) throw cobroError;
+
+      // Actualizar estado de la factura
+      const nuevoMontoCobrado = factura.monto_cobrado + montoCobrar;
+      const nuevoEstado = nuevoMontoCobrado >= factura.total_factura 
+        ? 'COBRADO_TOTAL' 
+        : nuevoMontoCobrado > 0 ? 'COBRADO_PARCIAL' : 'PENDIENTE';
+
+      const { error: facturaError } = await supabase
+        .from('facturacion')
+        .update({
+          monto_cobrado: nuevoMontoCobrado,
+          estado_cobro: nuevoEstado
+        })
+        .eq('id', factura.id);
+      if (facturaError) throw facturaError;
+
+      montoRestante -= montoCobrar;
     }
-  };
+
+    // ✅ MANEJAR SOBREPAGO: CREAR CRÉDITO A FAVOR
+    if (montoRestante > 0) {
+      
+      // Crear una "nota de crédito virtual" por el sobrepago
+      const { error: creditoError } = await supabase
+        .from('facturacion')
+        .insert({
+          cliente_id: selectedCliente,
+          numero_factura: `CRE-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
+          tipo_factura: 'CRE', // Crédito por sobrepago
+          fecha_emision: cobroForm.fechaCobro,
+          total_factura: -montoRestante, // Negativo porque es a favor del cliente
+          monto_cobrado: -montoRestante,
+          estado_cobro: 'COBRADO_TOTAL',
+          observaciones: `Crédito por sobrepago del recibo ${numeroRecibo}`,
+          eliminado: false
+        });
+      
+      if (creditoError) throw creditoError;
+
+      // Registrar el cobro del sobrepago como crédito
+      const { error: cobroCreditoError } = await supabase
+        .from('cobros')
+        .insert({
+          factura_id: null, // Sin factura específica
+          numero_recibo: `${numeroRecibo}-CRE`,
+          fecha_cobro: cobroForm.fechaCobro,
+          forma_cobro_id: cobroForm.formaPagoId,
+          monto_cobrado: montoRestante,
+          numero_operacion: cobroForm.numeroOperacion,
+          observaciones: `Sobrepago generó crédito a favor por ${formatCurrency(montoRestante)}`
+        });
+      
+      if (cobroCreditoError) throw cobroCreditoError;
+    }
+
+    // ✅ REGISTRAR MOVIMIENTO POR EL MONTO TOTAL RECIBIDO
+    const formaPago = formasPago.find(f => f.id === cobroForm.formaPagoId);
+    const esEfectivo = formaPago?.nombre.toLowerCase().includes('efectivo') || 
+                     formaPago?.nombre.toLowerCase().includes('caja');
+
+    const clienteData = clientes.find(c => c.id === selectedCliente);
+    const nombreCliente = clienteData?.tipo_cliente === 'EMPRESA' 
+      ? clienteData.empresa || clienteData.nombre
+      : `${clienteData?.apellido}, ${clienteData?.nombre}`;
+
+    let conceptoMovimiento = `Cobro de facturas - Cliente: ${nombreCliente}`;
+    if (esSobrepago) {
+      conceptoMovimiento += ` (incluye sobrepago de ${formatCurrency(montoAPagar - totalFacturas)})`;
+    }
+
+    if (esEfectivo) {
+      await supabase
+        .from('movimientos_caja')
+        .insert({
+          tipo: 'INGRESO',
+          concepto: conceptoMovimiento,
+          monto: montoAPagar,
+          fecha_movimiento: cobroForm.fechaCobro
+        });
+    } else {
+      await supabase
+        .from('movimientos_banco')
+        .insert({
+          tipo: 'INGRESO',
+          concepto: conceptoMovimiento,
+          monto: montoAPagar,
+          numero_operacion: cobroForm.numeroOperacion,
+          fecha_movimiento: cobroForm.fechaCobro
+        });
+    }
+
+    // Mensaje de éxito
+    let mensajeExito = `Cobro registrado exitosamente con recibo ${numeroRecibo}`;
+    if (esSobrepago) {
+      mensajeExito += `\n\n✅ Sobrepago de ${formatCurrency(montoRestante)} registrado como crédito a favor del cliente.`;
+    }
+
+    setSuccess(mensajeExito);
+    setIsDialogOpen(false);
+    setSelectedFacturas([]);
+    setCobroForm({
+      formaPagoId: '',
+      numeroOperacion: '',
+      observaciones: '',
+      fechaCobro: new Date().toISOString().split('T')[0],
+      montoParcial: 0
+    });
+    
+    // Recargar datos
+    loadCobros();
+    loadFacturasCliente(selectedCliente);
+    loadEstadoCuentaClientes();
+
+  } catch (error) {
+    console.error('Error creating cobro:', error);
+    setError('Error al registrar el cobro');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleEditCobro = async () => {
     if (!selectedCobro) return;
@@ -976,106 +1057,144 @@ Fecha de emisión: ${formatDate(new Date().toISOString())}
       </Card>
 
       {/* Dialog para Nuevo Cobro */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Registrar Cobro</DialogTitle>
-            <DialogDescription>
-              Configure los detalles del cobro para las facturas seleccionadas
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Monto Total</Label>
-              <Input
-                type="text"
-                value={formatCurrency(calcularTotalSeleccionado())}
-                disabled
-                className="bg-gray-50"
-              />
-              {selectedFacturas.some(id => {
-                const factura = facturasCliente.find(f => f.id === id);
-                return factura && esNotaCredito(factura.tipo_factura);
-              }) && (
-                <div className="text-sm text-green-600 bg-green-50 p-2 rounded">
-                  ℹ️ Se incluyen notas de crédito que reducirán la deuda del cliente
-                </div>
-              )}
-            </div>
-            
-            {selectedFacturas.length === 1 && (
-              <div className="space-y-2">
-                <Label>Monto Parcial (opcional)</Label>
-                <Input
-                  type="number"
-                  placeholder="Dejar vacío para cobro total"
-                  value={cobroForm.montoParcial || ''}
-                  onChange={(e) => setCobroForm({...cobroForm, montoParcial: Number(e.target.value)})}
-                  max={calcularTotalSeleccionado()}
-                />
-                <p className="text-xs text-gray-500">
-                  Máximo: {formatCurrency(calcularTotalSeleccionado())}
-                </p>
-              </div>
-            )}
-            
-            <div className="space-y-2">
-              <Label>Forma de Cobro</Label>
-              <Select value={cobroForm.formaPagoId} onValueChange={(value) => 
-                setCobroForm({...cobroForm, formaPagoId: value})
-              }>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccione forma de cobro" />
-                </SelectTrigger>
-                <SelectContent>
-                  {formasPago.map(forma => (
-                    <SelectItem key={forma.id} value={forma.id}>
-                      {forma.nombre}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="space-y-2">
-              <Label>Fecha de Cobro</Label>
-              <Input
-                type="date"
-                value={cobroForm.fechaCobro}
-                onChange={(e) => setCobroForm({...cobroForm, fechaCobro: e.target.value})}
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label>Número de Operación (opcional)</Label>
-              <Input
-                placeholder="Número de transferencia, cheque, etc."
-                value={cobroForm.numeroOperacion}
-                onChange={(e) => setCobroForm({...cobroForm, numeroOperacion: e.target.value})}
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label>Observaciones</Label>
-              <Input
-                placeholder="Observaciones adicionales"
-                value={cobroForm.observaciones}
-                onChange={(e) => setCobroForm({...cobroForm, observaciones: e.target.value})}
-              />
-            </div>
+      {/* Dialog para Nuevo Cobro - ACTUALIZADO PARA SOBREPAGOS */}
+<Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+  <DialogContent className="sm:max-w-md">
+    <DialogHeader>
+      <DialogTitle>Registrar Cobro</DialogTitle>
+      <DialogDescription>
+        Configure los detalles del cobro para las facturas seleccionadas
+      </DialogDescription>
+    </DialogHeader>
+    
+    <div className="space-y-4 py-4">
+      {/* ✅ SECCIÓN INFORMATIVA DEL TOTAL ADEUDADO */}
+      <div className="space-y-2">
+        <Label>Monto Total</Label>
+        <Input
+          type="text"
+          value={formatCurrency(facturasCliente
+            .filter(factura => selectedFacturas.includes(factura.id))
+            .reduce((total, factura) => total + Math.abs(factura.saldo_pendiente), 0)
+          )}
+          disabled
+          className="bg-gray-50"
+        />
+        {selectedFacturas.some(id => {
+          const factura = facturasCliente.find(f => f.id === id);
+          return factura && esNotaCredito(factura.tipo_factura);
+        }) && (
+          <div className="text-sm text-green-600 bg-green-50 p-2 rounded">
+            ℹ️ Se incluyen notas de crédito que reducirán la deuda del cliente
           </div>
-          
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleGenerarCobro} disabled={loading}>
-              {loading ? "Procesando..." : "Registrar Cobro"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        )}
+      </div>
+      
+      {/* ✅ NUEVA SECCIÓN: MONTO A COBRAR (PERMITE SOBREPAGO) */}
+      <div className="space-y-2">
+        <Label>Monto a Cobrar</Label>
+        <Input
+          type="number"
+          placeholder={`Dejar vacío para cobrar exactamente: ${formatCurrency(facturasCliente
+            .filter(factura => selectedFacturas.includes(factura.id))
+            .reduce((total, factura) => total + Math.abs(factura.saldo_pendiente), 0)
+          )}`}
+          value={cobroForm.montoParcial || ''}
+          onChange={(e) => setCobroForm({...cobroForm, montoParcial: Number(e.target.value)})}
+          min={0}
+          step="0.01"
+        />
+        <div className="text-xs space-y-1">
+          <p className="text-gray-600">
+            💡 <strong>Dejar vacío</strong> para cobrar exactamente: {formatCurrency(facturasCliente
+              .filter(factura => selectedFacturas.includes(factura.id))
+              .reduce((total, factura) => total + Math.abs(factura.saldo_pendiente), 0)
+            )}
+          </p>
+          {cobroForm.montoParcial > 0 && (() => {
+            const totalAdeudado = facturasCliente
+              .filter(factura => selectedFacturas.includes(factura.id))
+              .reduce((total, factura) => total + Math.abs(factura.saldo_pendiente), 0);
+            
+            if (cobroForm.montoParcial < totalAdeudado) {
+              return (
+                <p className="text-orange-600">
+                  ⚠️ <strong>Pago parcial:</strong> Faltarán {formatCurrency(totalAdeudado - cobroForm.montoParcial)}
+                </p>
+              );
+            } else if (cobroForm.montoParcial > totalAdeudado) {
+              return (
+                <p className="text-green-600">
+                  ✅ <strong>Sobrepago:</strong> {formatCurrency(cobroForm.montoParcial - totalAdeudado)} quedará como crédito a favor
+                </p>
+              );
+            } else {
+              return (
+                <p className="text-blue-600">
+                  ✅ <strong>Pago exacto</strong>
+                </p>
+              );
+            }
+          })()}
+        </div>
+      </div>
+      
+      <div className="space-y-2">
+        <Label>Forma de Cobro</Label>
+        <Select value={cobroForm.formaPagoId} onValueChange={(value) => 
+          setCobroForm({...cobroForm, formaPagoId: value})
+        }>
+          <SelectTrigger>
+            <SelectValue placeholder="Seleccione forma de cobro" />
+          </SelectTrigger>
+          <SelectContent>
+            {formasPago.map(forma => (
+              <SelectItem key={forma.id} value={forma.id}>
+                {forma.nombre}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      
+      <div className="space-y-2">
+        <Label>Fecha de Cobro</Label>
+        <Input
+          type="date"
+          value={cobroForm.fechaCobro}
+          onChange={(e) => setCobroForm({...cobroForm, fechaCobro: e.target.value})}
+        />
+      </div>
+      
+      <div className="space-y-2">
+        <Label>Número de Operación (opcional)</Label>
+        <Input
+          placeholder="Número de transferencia, cheque, etc."
+          value={cobroForm.numeroOperacion}
+          onChange={(e) => setCobroForm({...cobroForm, numeroOperacion: e.target.value})}
+        />
+      </div>
+      
+      <div className="space-y-2">
+        <Label>Observaciones</Label>
+        <Input
+          placeholder="Observaciones adicionales"
+          value={cobroForm.observaciones}
+          onChange={(e) => setCobroForm({...cobroForm, observaciones: e.target.value})}
+        />
+      </div>
+    </div>
+    
+    <DialogFooter>
+      <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+        Cancelar
+      </Button>
+      <Button onClick={handleGenerarCobro} disabled={loading}>
+        {loading ? "Procesando..." : "Registrar Cobro"}
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
 
       {/* Dialog para Editar Cobro */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
