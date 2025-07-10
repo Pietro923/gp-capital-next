@@ -24,7 +24,8 @@ import {
   LogOut,
   ChevronLeft,
   BookOpenCheck,
-  SquareLibrary
+  SquareLibrary,
+  Banknote
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -84,6 +85,7 @@ const sections: Section[] = [
     items: [
       { id: "pagos", name: "Gestión de Pagos", icon: BookOpenCheck, href: "/PaymentManagement" },
       { id: "cobros", name: " Gestión de Cobros", icon: SquareLibrary, href: "/InvoiceCollections" },
+      { id: "chequera", name: " Gestión de Cheques", icon: Banknote, href: "/Chequera" },
       ]
     }
 ];

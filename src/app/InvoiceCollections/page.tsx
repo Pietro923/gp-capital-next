@@ -807,6 +807,13 @@ Fecha de emisión: ${formatDate(new Date().toISOString())}
   }
 };
 
+// Agregar esta función al componente Chequera
+const formatearFecha = (fechaString: string) => {
+  const fechaSolo = fechaString.split('T')[0];
+  const [año, mes, dia] = fechaSolo.split('-');
+  return `${dia}/${mes}/${año}`;
+}
+
   return (
     <div className="space-y-6">
       {error && (
@@ -1042,7 +1049,7 @@ Fecha de emisión: ${formatDate(new Date().toISOString())}
                                   <div className="text-sm text-gray-500">Tipo {cobro.factura.tipo_factura}</div>
                                 </div>
                               </td>
-                              <td className="p-3">{formatDate(cobro.fecha_cobro)}</td>
+                              <td className="p-3">{formatearFecha(cobro.fecha_cobro)}</td>
                               <td className="text-right p-3">
                                 <span className={esNotaCredito(cobro.factura.tipo_factura) ? 'text-green-600' : ''}>
                                   {formatCurrency(cobro.monto_cobrado)}
