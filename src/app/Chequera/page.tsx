@@ -32,8 +32,8 @@ import * as XLSX from 'xlsx';
 interface MovimientoIntercompany {
   id: string;
   tipo_operacion: 'RECIBIR' | 'ENTREGAR' | 'CANJE';
-  empresa_origen: 'GP_CAPITAL' | 'PUEBLE' | 'SEMAGE';
-  empresa_destino: 'GP_CAPITAL' | 'PUEBLE' | 'SEMAGE';
+  empresa_origen: 'GP_CAPITAL' | 'PUEBLE' | 'SEMAGE' | 'CP_MOTORS' | 'UB_MOTORS';
+empresa_destino: 'GP_CAPITAL' | 'PUEBLE' | 'SEMAGE' | 'CP_MOTORS' | 'UB_MOTORS';
   concepto: string;
   tipo_recibe?: 'EFECTIVO' | 'CHEQUE' | 'TRANSFERENCIA';
   monto_recibe?: number;
@@ -57,8 +57,8 @@ const Chequera: React.FC = () => {
 
   const [formData, setFormData] = useState({
     tipoOperacion: 'RECIBIR' as 'RECIBIR' | 'ENTREGAR' | 'CANJE',
-    empresaOrigen: 'GP_CAPITAL' as 'GP_CAPITAL' | 'PUEBLE' | 'SEMAGE',
-    empresaDestino: 'PUEBLE' as 'GP_CAPITAL' | 'PUEBLE' | 'SEMAGE',
+    empresaOrigen: 'GP_CAPITAL' as 'GP_CAPITAL' | 'PUEBLE' | 'SEMAGE' | 'CP_MOTORS' | 'UB_MOTORS',
+    empresaDestino: 'PUEBLE' as 'GP_CAPITAL' | 'PUEBLE' | 'SEMAGE' | 'CP_MOTORS' | 'UB_MOTORS',
     concepto: '',
     
     // Lo que se recibe
@@ -674,10 +674,12 @@ const formatearFecha = (fechaString: string) => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="GP_CAPITAL">GP Capital</SelectItem>
-                      <SelectItem value="PUEBLE">PUEBLE</SelectItem>
-                      <SelectItem value="SEMAGE">SEMAGE</SelectItem>
-                    </SelectContent>
+  <SelectItem value="GP_CAPITAL">GP Capital</SelectItem>
+  <SelectItem value="PUEBLE">PUEBLE</SelectItem>
+  <SelectItem value="SEMAGE">SEMAGE</SelectItem>
+  <SelectItem value="CP_MOTORS">CP Motors</SelectItem>
+  <SelectItem value="UB_MOTORS">UB Motors</SelectItem>
+</SelectContent>
                   </Select>
                 </div>
 
