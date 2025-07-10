@@ -74,7 +74,8 @@ export default function Dashboard() {
       .from('movimientos_caja')
       .select('tipo, monto')
       .gte('fecha_movimiento', filtro.fechaInicio)
-      .lte('fecha_movimiento', filtro.fechaFin + ' 23:59:59');
+      .lte('fecha_movimiento', filtro.fechaFin + ' 23:59:59')
+      .eq('eliminado', false);
     if (error) throw error;
     return data.reduce((acc, mov) => {
       if (mov.tipo === 'INGRESO') {
@@ -91,7 +92,8 @@ export default function Dashboard() {
       .from('movimientos_banco')
       .select('tipo, monto')
       .gte('fecha_movimiento', filtro.fechaInicio)
-      .lte('fecha_movimiento', filtro.fechaFin + ' 23:59:59');
+      .lte('fecha_movimiento', filtro.fechaFin + ' 23:59:59')
+      .eq('eliminado', false);
     if (error) throw error;
     return data.reduce((acc, mov) => {
       switch (mov.tipo) {
@@ -134,7 +136,8 @@ export default function Dashboard() {
       .from('compras')
       .select('total_factura')
       .gte('fecha_compra', filtro.fechaInicio)
-      .lte('fecha_compra', filtro.fechaFin);
+      .lte('fecha_compra', filtro.fechaFin)
+      .eq('eliminado', false);
     if (error) throw error;
     const total = data.reduce((acc, compra) => acc + Number(compra.total_factura), 0);
     return { total };
@@ -475,6 +478,7 @@ export default function Dashboard() {
       `)
       .gte('fecha_compra', filtro.fechaInicio)
       .lte('fecha_compra', filtro.fechaFin)
+      .eq('eliminado', false)
       .order('fecha_compra', { ascending: false });
 
     if (compraError) throw compraError;
@@ -992,7 +996,8 @@ export default function Dashboard() {
         .select('fecha_movimiento, tipo, concepto, monto, created_at')
         .gte('fecha_movimiento', filtro.fechaInicio)
         .lte('fecha_movimiento', filtro.fechaFin + ' 23:59:59')
-        .order('fecha_movimiento', { ascending: false });
+        .order('fecha_movimiento', { ascending: false })
+        .eq('eliminado', false);
 
       if (error) throw error;
 
@@ -1134,7 +1139,8 @@ export default function Dashboard() {
         .select('fecha_movimiento, tipo, concepto, monto, numero_operacion, detalle_gastos, created_at')
         .gte('fecha_movimiento', filtro.fechaInicio)
         .lte('fecha_movimiento', filtro.fechaFin + ' 23:59:59')
-        .order('fecha_movimiento', { ascending: false });
+        .order('fecha_movimiento', { ascending: false })
+        .eq('eliminado', false);
 
       if (error) throw error;
 

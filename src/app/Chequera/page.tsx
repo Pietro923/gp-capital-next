@@ -294,27 +294,59 @@ const Chequera: React.FC = () => {
   };
 
   // Eliminar movimiento
-  const handleEliminarMovimiento = async (id: string) => {
-    if (!confirm('¿Está seguro de eliminar este movimiento?')) return;
+ const handleEliminarMovimiento = async (id: string) => {
+  if (!confirm('¿Está seguro de eliminar este movimiento?')) return;
 
-    try {
-      const { error } = await supabase
-        .from('movimientos_intercompany')
-        .update({ 
-          eliminado: true, 
-          fecha_eliminacion: new Date().toISOString() 
-        })
-        .eq('id', id);
+  try {
+    // 1. Obtener el movimiento
+    const { data: movimiento, error: getError } = await supabase
+      .from('movimientos_intercompany')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-      if (error) throw error;
+    if (getError) throw getError;
 
-      setSuccess('Movimiento eliminado exitosamente');
-      loadMovimientos();
-    } catch (error) {
-      console.error('Error deleting movimiento:', error);
-      setError('Error al eliminar el movimiento');
+    // 2. Eliminar movimientos contables relacionados usando el concepto EXACTO
+    if (movimiento.tipo_recibe && movimiento.monto_recibe) {
+      const tabla = movimiento.tipo_recibe === 'EFECTIVO' ? 'movimientos_caja' : 'movimientos_banco';
+      // Reconstruir el concepto EXACTO como se generó
+      const conceptoExacto = `Intercompany - ${movimiento.concepto} - Recibe ${movimiento.tipo_recibe} de ${movimiento.empresa_origen}`;
+      
+      await supabase
+        .from(tabla)
+        .update({ eliminado: true, fecha_eliminacion: new Date().toISOString() })
+        .eq('concepto', conceptoExacto)
+        .eq('monto', movimiento.monto_recibe);
     }
-  };
+
+    if (movimiento.tipo_entrega && movimiento.monto_entrega) {
+      const tabla = movimiento.tipo_entrega === 'EFECTIVO' ? 'movimientos_caja' : 'movimientos_banco';
+      // Reconstruir el concepto EXACTO como se generó
+      const conceptoExacto = `Intercompany - ${movimiento.concepto} - Entrega ${movimiento.tipo_entrega} a ${movimiento.empresa_destino}`;
+      
+      await supabase
+        .from(tabla)
+        .update({ eliminado: true, fecha_eliminacion: new Date().toISOString() })
+        .eq('concepto', conceptoExacto)
+        .eq('monto', movimiento.monto_entrega);
+    }
+
+    // 3. Eliminar el movimiento intercompany
+    const { error } = await supabase
+      .from('movimientos_intercompany')
+      .update({ eliminado: true, fecha_eliminacion: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) throw error;
+
+    setSuccess('Movimiento eliminado exitosamente');
+    loadMovimientos();
+  } catch (error) {
+    console.error('Error deleting movimiento:', error);
+    setError('Error al eliminar el movimiento');
+  }
+};
 
   // Abrir dialog de edición
   const abrirEdicion = (movimiento: MovimientoIntercompany) => {
