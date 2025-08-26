@@ -104,6 +104,10 @@ export function EditarPrestamoDialog({ open, onOpenChange, onConfirm, prestamo }
   const [agregarGastoOtorgamiento, setAgregarGastoOtorgamiento] = useState<boolean>(false);
   const [agregarGastoTransferencia, setAgregarGastoTransferencia] = useState<boolean>(false);
 
+  // Para editar los gastos
+  const [gastoEditando, setGastoEditando] = useState<string | null>(null);
+  const [montoEditando, setMontoEditando] = useState<number>(0);
+
   // Obtener nombre del cliente
   const getNombreCliente = (cliente: Cliente) => {
     if (cliente.tipo_cliente === "EMPRESA") {
@@ -230,6 +234,11 @@ const agregarGastosNuevos = async () => {
     setError(null);
     setLoading(false);
     setCuotaEditando(null);
+
+    // Limpiar estado de edición de gastos
+    setGastoEditando(null);
+    setMontoEditando(0);
+
     onOpenChange(false);
   };
 
@@ -373,6 +382,82 @@ const getColorEstado = (estado: string) => {
 
     setError(null);
   };
+
+  // TODO PARA EDITAR GASTOS AQUI ABAJO
+
+  const iniciarEdicionGasto = (gasto: GastoPrestamo) => {
+  setGastoEditando(gasto.id);
+  setMontoEditando(gasto.monto);
+};
+
+// 3. Función para guardar cambios en el gasto
+const guardarCambiosGasto = async (gastoId: string) => {
+  try {
+    const { error } = await supabase
+      .from('gastos_prestamo')
+      .update({ monto: montoEditando })
+      .eq('id', gastoId);
+
+    if (error) throw error;
+
+    // Actualizar el estado local
+    setGastosExistentes(prev => 
+      prev.map(g => g.id === gastoId ? { ...g, monto: montoEditando } : g)
+    );
+
+    setGastoEditando(null);
+    setMontoEditando(0);
+
+  } catch (error) {
+    console.error('Error actualizando gasto:', error);
+    setError('Error al actualizar el gasto');
+  }
+};
+
+// 4. Función para cancelar edición
+const cancelarEdicionGasto = () => {
+  setGastoEditando(null);
+  setMontoEditando(0);
+};
+
+// 5. Función para eliminar gasto
+const eliminarGasto = async (gasto: GastoPrestamo) => {
+  // Confirmación doble si el gasto está facturado o cobrado
+  let mensaje = `¿Está seguro de eliminar este gasto?\n\n${getDescripcionCorta(gasto.tipo_gasto)}: ${gasto.moneda === 'Dolar' ? 'US$' : '$'}${gasto.monto.toLocaleString('es-AR')}`;
+  
+  if (gasto.estado !== 'PENDIENTE') {
+    mensaje += `\n\n⚠️ ATENCIÓN: Este gasto está en estado ${gasto.estado}.\nLa eliminación podría afectar la facturación.`;
+  }
+
+  const confirmar = confirm(mensaje);
+  if (!confirmar) return;
+
+  // Segunda confirmación para gastos no pendientes
+  if (gasto.estado !== 'PENDIENTE') {
+    const confirmar2 = confirm('⚠️ ÚLTIMA CONFIRMACIÓN\n\nEste gasto no está PENDIENTE.\n¿Continuar con la eliminación?');
+    if (!confirmar2) return;
+  }
+
+  try {
+    // Soft delete del gasto
+    const { error } = await supabase
+      .from('gastos_prestamo')
+      .update({ 
+        eliminado: true, 
+        fecha_eliminacion: new Date().toISOString() 
+      })
+      .eq('id', gasto.id);
+
+    if (error) throw error;
+
+    // Actualizar lista local
+    setGastosExistentes(prev => prev.filter(g => g.id !== gasto.id));
+
+  } catch (error) {
+    console.error('Error eliminando gasto:', error);
+    setError('Error al eliminar el gasto');
+  }
+};
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -662,34 +747,106 @@ const getColorEstado = (estado: string) => {
         
         {/* Gastos existentes */}
         {gastosExistentes.length > 0 && (
-          <div>
-            <h4 className="font-semibold mb-3">Gastos Actuales</h4>
-            <div className="space-y-2">
-              {gastosExistentes.map((gasto) => (
-                <div key={gasto.id} className="border border-orange-200 rounded-lg p-4 bg-orange-50">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <div className="font-medium text-orange-800">
-                        {getDescripcionCorta(gasto.tipo_gasto)}
-                      </div>
-                      <div className="text-xs text-orange-600">
-                        Creado: {new Date(gasto.fecha_creacion).toLocaleDateString('es-AR')}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-semibold text-orange-700">
-                        {gasto.moneda === 'Dolar' ? 'US$' : '$'}{gasto.monto.toLocaleString('es-AR')}
-                      </div>
-                      <Badge className={getColorEstado(gasto.estado)}>
-                        {gasto.estado}
-                      </Badge>
-                    </div>
-                  </div>
+  <div>
+    <h4 className="font-semibold mb-3">Gastos Actuales</h4>
+    <div className="space-y-2">
+      {gastosExistentes.map((gasto) => (
+        <div key={gasto.id} className="border border-orange-200 rounded-lg p-4 bg-orange-50">
+          <div className="flex justify-between items-start">
+            <div className="flex-1">
+              <div className="font-medium text-orange-800">
+                {getDescripcionCorta(gasto.tipo_gasto)}
+              </div>
+              <div className="text-xs text-orange-600">
+                Creado: {new Date(gasto.fecha_creacion).toLocaleDateString('es-AR')}
+              </div>
+            </div>
+
+                    <div className="flex flex-col items-end gap-2">
+              {/* Monto - Editable o no */}
+              {gastoEditando === gasto.id ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    value={montoEditando}
+                    onChange={(e) => setMontoEditando(parseFloat(e.target.value) || 0)}
+                    className="w-24 h-8 text-right"
+                    min="0"
+                  />
+                  <span className="text-sm text-orange-700">
+                    {gasto.moneda === 'Dolar' ? 'US$' : '$'}
+                  </span>
                 </div>
-              ))}
+              ) : (
+                <div className="font-semibold text-orange-700">
+                  {gasto.moneda === 'Dolar' ? 'US$' : '$'}{gasto.monto.toLocaleString('es-AR')}
+                </div>
+              )}
+              
+              {/* Estado */}
+              <Badge className={getColorEstado(gasto.estado)}>
+                {gasto.estado}
+              </Badge>
+
+              {/* Botones de acción */}
+              <div className="flex gap-1">
+                {gastoEditando === gasto.id ? (
+                  // Modo edición
+                  <>
+                    <Button
+                      size="sm"
+                      onClick={() => guardarCambiosGasto(gasto.id)}
+                      className="h-7 px-2 text-xs bg-green-600 hover:bg-green-700"
+                    >
+                      ✓
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={cancelarEdicionGasto}
+                      className="h-7 px-2 text-xs"
+                    >
+                      ✕
+                    </Button>
+                  </>
+                ) : (
+                  // Modo normal
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => iniciarEdicionGasto(gasto)}
+                      className="h-7 px-2 text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
+                      disabled={gasto.estado === 'COBRADO'} // No editar gastos ya cobrados
+                    >
+                      Editar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => eliminarGasto(gasto)}
+                      className="h-7 px-2 text-xs text-red-600 border-red-200 hover:bg-red-50"
+                    >
+                      Eliminar
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
-        )}
+
+          {/* Mensaje informativo para gastos no pendientes */}
+          {gasto.estado !== 'PENDIENTE' && (
+            <div className="mt-2 p-2 bg-yellow-100 border border-yellow-200 rounded text-xs text-yellow-800">
+              💡 Este gasto está {gasto.estado.toLowerCase()}. 
+              {gasto.estado === 'COBRADO' ? ' No se puede editar el monto.' : ' Tenga cuidado al modificarlo.'}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  </div>
+)}
 
         {/* Agregar nuevos gastos */}
         <div>
