@@ -242,9 +242,63 @@ const InvoiceCollections: React.FC = () => {
   }, [selectedCliente]);
 
   // ✅ FUNCIÓN MEJORADA PARA CARGAR FACTURAS CON LÓGICA DE NOTAS DE CRÉDITO
-  const loadFacturasCliente = async (clienteId: string) => {
-    try {
-      const { data, error } = await supabase
+  // ✅ FUNCIÓN CORREGIDA PARA CARGAR FACTURAS CON LÓGICA DE NOTAS DE CRÉDITO
+const loadFacturasCliente = async (clienteId: string) => {
+  try {
+    // PASO 1: Obtener TODAS las facturas del cliente
+    const { data: dataOriginal, error } = await supabase
+      .from('facturacion')
+      .select(`
+        id,
+        numero_factura,
+        tipo_factura,
+        fecha_emision,
+        total_factura,
+        monto_cobrado,
+        estado_cobro,
+        fecha_vencimiento,
+        clientes (
+          id,
+          nombre,
+          apellido,
+          dni,
+          cuit,
+          tipo_cliente,
+          empresa
+        )
+      `)
+      .eq('cliente_id', clienteId)
+      .eq('eliminado', false)
+      .order('fecha_emision', { ascending: false });
+    
+    if (error) throw error;
+    
+    let data = dataOriginal; // Variable mutable
+    
+    // PASO 2: Calcular saldo total del cliente
+    let saldoTotalCliente = 0;
+    data?.forEach(factura => {
+      const esNC = esNotaCredito(factura.tipo_factura);
+      const impacto = esNC ? -factura.total_factura : factura.total_factura;
+      saldoTotalCliente += impacto;
+    });
+    
+    // PASO 3: Si está balanceado, actualizar facturas pendientes automáticamente
+    if (Math.abs(saldoTotalCliente) < 0.01) {
+      const facturasPendientes = data?.filter(f => f.estado_cobro === 'PENDIENTE') || [];
+      
+      for (const factura of facturasPendientes) {
+        await supabase
+          .from('facturacion')
+          .update({
+            estado_cobro: 'COBRADO_TOTAL',
+            monto_cobrado: factura.total_factura
+          })
+          .eq('id', factura.id);
+      }
+      
+      // Recargar datos actualizados
+      const { data: dataActualizada } = await supabase
         .from('facturacion')
         .select(`
           id,
@@ -267,31 +321,33 @@ const InvoiceCollections: React.FC = () => {
         `)
         .eq('cliente_id', clienteId)
         .eq('eliminado', false)
-        .neq('estado_cobro', 'COBRADO_TOTAL')
         .order('fecha_emision', { ascending: false });
-      
-      if (error) throw error;
-      
-      // ✅ PROCESAR FACTURAS CON LÓGICA CORRECTA PARA NOTAS DE CRÉDITO
-      const facturasFormatted = data?.map(factura => {
-        // Para notas de crédito, el saldo pendiente debe ser negativo (porque reduce la deuda)
-        const saldoPendiente = esNotaCredito(factura.tipo_factura) 
-          ? -(factura.total_factura - factura.monto_cobrado)  // Negativo para NC
-          : (factura.total_factura - factura.monto_cobrado);  // Positivo para facturas normales
         
-        return {
-          ...factura,
-          saldo_pendiente: saldoPendiente,
-          cliente: (factura.clientes as any) || {} as Cliente
-        };
-      }) || [];
-      
-      setFacturasCliente(facturasFormatted);
-    } catch (error) {
-      console.error('Error loading facturas cliente:', error);
-      setError('Error al cargar facturas del cliente');
+      if (dataActualizada) data = dataActualizada; // Ahora funciona
     }
-  };
+    
+    // PASO 4: Filtrar solo facturas con saldo pendiente REAL
+    const facturasFormatted = data?.filter(factura => {
+      const saldoReal = factura.total_factura - factura.monto_cobrado;
+      return Math.abs(saldoReal) > 0.01; // Solo mostrar si hay saldo pendiente
+    }).map(factura => {
+      const saldoPendiente = esNotaCredito(factura.tipo_factura) 
+        ? -(factura.total_factura - factura.monto_cobrado)
+        : (factura.total_factura - factura.monto_cobrado);
+      
+      return {
+        ...factura,
+        saldo_pendiente: saldoPendiente,
+        cliente: (factura.clientes as any) || {} as Cliente
+      };
+    }) || [];
+    
+    setFacturasCliente(facturasFormatted);
+  } catch (error) {
+    console.error('Error loading facturas cliente:', error);
+    setError('Error al cargar facturas del cliente');
+  }
+};
 
   const handleCheckboxChange = (facturaId: string, checked: boolean) => {
     if (checked) {
@@ -302,16 +358,68 @@ const InvoiceCollections: React.FC = () => {
   };
 
   // ✅ FUNCIÓN CORREGIDA PARA CALCULAR TOTAL SELECCIONADO
-  const calcularTotalSeleccionado = () => {
-  const totalFacturas = facturasCliente
-    .filter(factura => selectedFacturas.includes(factura.id))
-    .reduce((total, factura) => {
-      // Para notas de crédito, sumamos el valor absoluto ya que el usuario quiere "cobrar" la NC
-      return total + Math.abs(factura.saldo_pendiente);
-    }, 0);
+  // ✅ FUNCIÓN CORREGIDA PARA CALCULAR TOTAL SELECCIONADO
+const calcularTotalSeleccionado = () => {
+  let totalNeto = 0;
   
-  // ✅ NUEVO: Si hay sobrepago configurado, usar ese monto
-  return cobroForm.montoParcial > 0 ? cobroForm.montoParcial : totalFacturas;
+  facturasCliente
+    .filter(factura => selectedFacturas.includes(factura.id))
+    .forEach(factura => {
+      if (esNotaCredito(factura.tipo_factura)) {
+        // NC: restar del total (porque es crédito que se aplica)
+        totalNeto += factura.saldo_pendiente; // Ya es negativo
+      } else {
+        // Factura normal: sumar al total (deuda a cobrar)
+        totalNeto += factura.saldo_pendiente; // Ya es positivo
+      }
+    });
+  
+  // El total neto puede ser negativo si hay más crédito que deuda
+  const totalFinal = Math.max(0, totalNeto); // No permitir totales negativos
+  
+  // Si hay sobrepago configurado manualmente, usar ese monto
+  return cobroForm.montoParcial > 0 ? cobroForm.montoParcial : totalFinal;
+};
+
+// ✅ AGREGAR ESTA FUNCIÓN PARA MOSTRAR MEJOR LOS SALDOS EN LA TABLA
+const formatearSaldoFactura = (factura: FacturaDetalle) => {
+  const esNC = esNotaCredito(factura.tipo_factura);
+  const saldo = Math.abs(factura.saldo_pendiente);
+  
+  if (esNC) {
+    return (
+      <span className="text-green-600 font-medium">
+        ${saldo.toLocaleString('es-AR', { minimumFractionDigits: 2 })} (CRÉDITO)
+      </span>
+    );
+  } else {
+    return (
+      <span className="text-red-600 font-medium">
+        ${saldo.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+      </span>
+    );
+  }
+};
+
+const mostrarExplicacionTotal = () => {
+  const facturas = facturasCliente.filter(f => selectedFacturas.includes(f.id));
+  const tieneNC = facturas.some(f => esNotaCredito(f.tipo_factura));
+  const tieneFacturas = facturas.some(f => !esNotaCredito(f.tipo_factura));
+  
+  if (tieneNC && tieneFacturas) {
+    return (
+      <div className="text-sm text-blue-600 mt-2">
+        ℹ️ Se aplicará el crédito disponible contra la deuda pendiente
+      </div>
+    );
+  } else if (tieneNC && !tieneFacturas) {
+    return (
+      <div className="text-sm text-green-600 mt-2">
+        ✅ Solo créditos seleccionados - Se registrará el uso del crédito
+      </div>
+    );
+  }
+  return null;
 };
 
  // ✅ 2. AGREGAR VALIDACIÓN Y LÓGICA PARA SOBREPAGOS
@@ -321,14 +429,11 @@ const handleGenerarCobro = async () => {
     return;
   }
 
-  const totalFacturas = facturasCliente
-    .filter(factura => selectedFacturas.includes(factura.id))
-    .reduce((total, factura) => total + Math.abs(factura.saldo_pendiente), 0);
-
+  const totalFacturas = calcularTotalSeleccionado();
   const montoAPagar = cobroForm.montoParcial > 0 ? cobroForm.montoParcial : totalFacturas;
   const esSobrepago = montoAPagar > totalFacturas;
 
-  // ✅ CONFIRMAR SOBREPAGO
+  // Confirmar sobrepago
   if (esSobrepago) {
     const diferencia = montoAPagar - totalFacturas;
     const confirmar = confirm(
@@ -359,11 +464,11 @@ const handleGenerarCobro = async () => {
 
     let montoRestante = montoAPagar;
 
-    // ✅ PROCESAR FACTURAS EN ORDEN: PRIMERO LAS NORMALES, LUEGO LAS NC
+    // ✅ PROCESAR FACTURAS CORRECTAMENTE
     const facturasOrdenadas = facturasCliente
       .filter(factura => selectedFacturas.includes(factura.id))
       .sort((a, b) => {
-        // Primero facturas normales (positivas), luego notas de crédito (negativas)
+        // Primero facturas normales, luego notas de crédito
         if (esNotaCredito(a.tipo_factura) && !esNotaCredito(b.tipo_factura)) return 1;
         if (!esNotaCredito(a.tipo_factura) && esNotaCredito(b.tipo_factura)) return -1;
         return 0;
@@ -380,7 +485,9 @@ const handleGenerarCobro = async () => {
         .from('cobros')
         .insert({
           factura_id: factura.id,
-          numero_recibo: facturasOrdenadas.length === 1 ? numeroRecibo : `${numeroRecibo}-${factura.id.slice(-4)}`,
+          numero_recibo: facturasOrdenadas.length === 1 
+            ? numeroRecibo 
+            : `${numeroRecibo}-${factura.id.slice(-4)}`,
           fecha_cobro: cobroForm.fechaCobro,
           forma_cobro_id: cobroForm.formaPagoId,
           monto_cobrado: montoCobrar,
@@ -389,58 +496,67 @@ const handleGenerarCobro = async () => {
         });
       if (cobroError) throw cobroError;
 
-      // Actualizar estado de la factura
-      const nuevoMontoCobrado = factura.monto_cobrado + montoCobrar;
-      const nuevoEstado = nuevoMontoCobrado >= factura.total_factura 
-        ? 'COBRADO_TOTAL' 
-        : nuevoMontoCobrado > 0 ? 'COBRADO_PARCIAL' : 'PENDIENTE';
+      // ✅ ACTUALIZAR ESTADO DE LA FACTURA CORRECTAMENTE
+      if (esNotaCredito(factura.tipo_factura)) {
+        // Para NC: aumentar monto_cobrado (se "usa" el crédito)
+        const nuevoMontoCobrado = factura.monto_cobrado + montoCobrar;
+        const nuevoEstado = Math.abs(nuevoMontoCobrado) >= Math.abs(factura.total_factura)
+          ? 'COBRADO_TOTAL' 
+          : nuevoMontoCobrado > 0 ? 'COBRADO_PARCIAL' : 'PENDIENTE';
 
-      const { error: facturaError } = await supabase
-        .from('facturacion')
-        .update({
-          monto_cobrado: nuevoMontoCobrado,
-          estado_cobro: nuevoEstado
-        })
-        .eq('id', factura.id);
-      if (facturaError) throw facturaError;
+        await supabase
+          .from('facturacion')
+          .update({
+            monto_cobrado: nuevoMontoCobrado,
+            estado_cobro: nuevoEstado
+          })
+          .eq('id', factura.id);
+      } else {
+        // Para facturas normales: funciona como antes
+        const nuevoMontoCobrado = factura.monto_cobrado + montoCobrar;
+        const nuevoEstado = nuevoMontoCobrado >= factura.total_factura 
+          ? 'COBRADO_TOTAL' 
+          : nuevoMontoCobrado > 0 ? 'COBRADO_PARCIAL' : 'PENDIENTE';
+
+        await supabase
+          .from('facturacion')
+          .update({
+            monto_cobrado: nuevoMontoCobrado,
+            estado_cobro: nuevoEstado
+          })
+          .eq('id', factura.id);
+      }
 
       montoRestante -= montoCobrar;
     }
 
-    // ✅ MANEJAR SOBREPAGO: CREAR CRÉDITO A FAVOR
+    // ✅ MANEJAR SOBREPAGO: CREAR CRÉDITO A FAVOR (ahora funcionará porque agregamos 'CRE')
     if (montoRestante > 0) {
-      
       // Crear una "nota de crédito virtual" por el sobrepago
       const { error: creditoError } = await supabase
         .from('facturacion')
         .insert({
           cliente_id: selectedCliente,
           numero_factura: `CRE-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
-          tipo_factura: 'CRE', // Crédito por sobrepago
+          tipo_factura: 'CRE', // ✅ Ahora este tipo está permitido
           fecha_emision: cobroForm.fechaCobro,
           total_factura: -montoRestante, // Negativo porque es a favor del cliente
-          monto_cobrado: -montoRestante,
-          estado_cobro: 'COBRADO_TOTAL',
+          monto_cobrado: 0, // Sin cobrar aún
+          estado_cobro: 'PENDIENTE',
           observaciones: `Crédito por sobrepago del recibo ${numeroRecibo}`,
-          eliminado: false
+          eliminado: false,
+          // ✅ AGREGAR CAMPOS REQUERIDOS
+          tipo_iva_id: (await supabase
+            .from('clientes')
+            .select('tipo_iva_id')
+            .eq('id', selectedCliente)
+            .single()).data?.tipo_iva_id,
+          forma_pago_id: cobroForm.formaPagoId,
+          total_neto: -montoRestante,
+          iva: 0
         });
       
       if (creditoError) throw creditoError;
-
-      // Registrar el cobro del sobrepago como crédito
-      const { error: cobroCreditoError } = await supabase
-        .from('cobros')
-        .insert({
-          factura_id: null, // Sin factura específica
-          numero_recibo: `${numeroRecibo}-CRE`,
-          fecha_cobro: cobroForm.fechaCobro,
-          forma_cobro_id: cobroForm.formaPagoId,
-          monto_cobrado: montoRestante,
-          numero_operacion: cobroForm.numeroOperacion,
-          observaciones: `Sobrepago generó crédito a favor por ${formatCurrency(montoRestante)}`
-        });
-      
-      if (cobroCreditoError) throw cobroCreditoError;
     }
 
     // ✅ REGISTRAR MOVIMIENTO POR EL MONTO TOTAL RECIBIDO
@@ -503,7 +619,7 @@ const handleGenerarCobro = async () => {
 
   } catch (error) {
     console.error('Error creating cobro:', error);
-    setError('Error al registrar el cobro');
+    setError(`Error al registrar el cobro: ${error instanceof Error ? error.message : 'Error desconocido'}`);
   } finally {
     setLoading(false);
   }
@@ -682,14 +798,6 @@ const handleDeleteCobro = async (cobroId: string) => {
     }
   };
 
-  // ✅ FUNCIÓN PARA OBTENER COLOR DEL SALDO SEGÚN EL TIPO
-  const getSaldoColor = (tipoFactura: string, saldo: number) => {
-    if (esNotaCredito(tipoFactura)) {
-      return saldo < 0 ? 'text-green-600' : 'text-red-600'; // Verde para NC disponible, rojo si ya se aplicó
-    }
-    return saldo > 0 ? 'text-red-600' : 'text-green-600'; // Rojo para deuda, verde para pagado
-  };
-
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-AR', {
       style: 'currency',
@@ -748,10 +856,10 @@ Fecha de emisión: ${formatDate(new Date().toISOString())}
 
   const actualizarEstadosFacturasBalanceadas = async () => {
   try {
-    // Paso 1: Obtener clientes que tienen saldo 0 (balanceados)
+    // Obtener todas las facturas agrupadas por cliente
     const { data: facturasData, error: facturaError } = await supabase
       .from('facturacion')
-      .select('cliente_id, tipo_factura, total_factura, id, estado_cobro')
+      .select('cliente_id, tipo_factura, total_factura, id, estado_cobro, monto_cobrado')
       .eq('eliminado', false);
 
     if (facturaError) {
@@ -759,7 +867,7 @@ Fecha de emisión: ${formatDate(new Date().toISOString())}
       return;
     }
 
-    // Paso 2: Agrupar por cliente y calcular saldos
+    // Agrupar por cliente y calcular saldos CORRECTOS
     const saldosPorCliente: { [key: string]: { saldo: number; facturas: any[] } } = {};
     
     facturasData?.forEach(factura => {
@@ -767,36 +875,35 @@ Fecha de emisión: ${formatDate(new Date().toISOString())}
         saldosPorCliente[factura.cliente_id] = { saldo: 0, facturas: [] };
       }
       
-      // Calcular impacto en el saldo
-      const esNotaCredito = ['NCA', 'NCB', 'NCC'].includes(factura.tipo_factura);
+      // CORREGIDO: Calcular impacto correcto de NC
+      const esNotaCredito = ['NCA', 'NCB', 'NCC', 'CRE'].includes(factura.tipo_factura);
       const impacto = esNotaCredito ? -factura.total_factura : factura.total_factura;
       
       saldosPorCliente[factura.cliente_id].saldo += impacto;
       saldosPorCliente[factura.cliente_id].facturas.push(factura);
     });
 
-    // Paso 3: Identificar clientes balanceados (saldo = 0) y actualizar sus facturas
+    // Actualizar facturas de clientes balanceados
     for (const [clienteId, datos] of Object.entries(saldosPorCliente)) {
-      if (Math.abs(datos.saldo) < 0.01) { // Considerar saldo 0 (con tolerancia para decimales)
-        // Este cliente está balanceado, actualizar todas sus facturas pendientes
+      if (Math.abs(datos.saldo) < 0.01) { // Cliente balanceado
         const facturasPendientes = datos.facturas.filter(f => f.estado_cobro === 'PENDIENTE');
         
-        for (const factura of facturasPendientes) {
-          const { error: updateError } = await supabase
-            .from('facturacion')
-            .update({
-              estado_cobro: 'COBRADO_TOTAL',
-              monto_cobrado: factura.total_factura
-            })
-            .eq('id', factura.id);
-
-          if (updateError) {
-            console.error(`Error actualizando factura ${factura.id}:`, updateError);
-          }
-        }
-        
         if (facturasPendientes.length > 0) {
-          console.log(`Cliente ${clienteId}: ${facturasPendientes.length} facturas balanceadas`);
+          console.log(`Cliente ${clienteId}: Balanceado - Actualizando ${facturasPendientes.length} facturas`);
+          
+          for (const factura of facturasPendientes) {
+            const { error: updateError } = await supabase
+              .from('facturacion')
+              .update({
+                estado_cobro: 'COBRADO_TOTAL',
+                monto_cobrado: factura.total_factura
+              })
+              .eq('id', factura.id);
+
+            if (updateError) {
+              console.error(`Error actualizando factura ${factura.id}:`, updateError);
+            }
+          }
         }
       }
     }
@@ -950,10 +1057,7 @@ const formatearFecha = (fechaString: string) => {
                                     </td>
                                     <td className="text-right p-3">{formatCurrency(factura.monto_cobrado)}</td>
                                     <td className="text-right p-3 font-medium">
-                                      <span className={getSaldoColor(factura.tipo_factura, factura.saldo_pendiente)}>
-                                        {formatCurrency(Math.abs(factura.saldo_pendiente))}
-                                        {esNotaCredito(factura.tipo_factura) && ' (NC)'}
-                                      </span>
+                                      {formatearSaldoFactura(factura)}
                                     </td>
                                     <td className="p-3">
                                       <Badge className={getEstadoColor(factura.estado_cobro)}>
@@ -985,6 +1089,7 @@ const formatearFecha = (fechaString: string) => {
                                 <Plus className="h-4 w-4 mr-2" />
                                 Registrar Cobro
                               </Button>
+                              {mostrarExplicacionTotal()}
                             </div>
                           )}
                         </>
