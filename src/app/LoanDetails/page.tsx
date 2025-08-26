@@ -214,7 +214,14 @@ const LoanDetails = () => {
         })
       );
 
-      setPrestamos(prestamosConCuotas);
+      // ORDENAR ALFABÉTICAMENTE POR NOMBRE DE CLIENTE
+      const prestamosOrdenados = prestamosConCuotas.sort((a, b) => {
+        const nombreA = getNombreCliente(a.cliente).toLowerCase();
+        const nombreB = getNombreCliente(b.cliente).toLowerCase();
+        return nombreA.localeCompare(nombreB, 'es', { sensitivity: 'base' });
+      });
+
+      setPrestamos(prestamosOrdenados);
     } catch (error) {
       console.error('Error fetching data:', error);
       setError('Error al cargar los datos');
