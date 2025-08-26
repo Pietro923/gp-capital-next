@@ -22,8 +22,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from '@/utils/supabase/client';
 import { PagarDialog } from "@/components/PagarDialog";
 import { EditarPrestamoDialog } from "@/components/EditarPrestamoDialog";
+import * as XLSX from 'xlsx';
 
-// Interfaces actualizadas según el esquema de Supabase
+// Interfaces actualizadas
 interface Cliente {
   id: string;
   tipo_cliente: "PERSONA_FISICA" | "EMPRESA";
@@ -53,24 +54,58 @@ interface Prestamo {
   cantidad_cuotas: number;
   estado: 'ACTIVO' | 'CANCELADO' | 'COMPLETADO';
   fecha_inicio: string;
+  moneda: string;
+}
+
+interface GastoPrestamo {
+  id: string;
+  prestamo_id: string;
+  tipo_gasto: 'OTORGAMIENTO' | 'TRANSFERENCIA_PRENDA';
+  monto: number;
+  moneda: string;
+  estado: 'PENDIENTE' | 'FACTURADO' | 'COBRADO';
+  descripcion: string;
+  fecha_creacion: string;
 }
 
 interface PrestamoConCuotas extends Prestamo {
   cliente: Cliente;
   cuotas: Cuota[];
+  gastos: GastoPrestamo[];
   cuotas_pagadas: number;
 }
 
 interface ExcelRow {
   Cliente: string;
   Documento: string;
-  'Número de Cuota': number;
+  Moneda: string;
+  Tipo: string;
+  'Número de Cuota': number | string;
   'Fecha Vencimiento': string;
   'Monto': number;
   'Estado': string;
   'Fecha Pago': string;
   'Tasa Interés': number;
 }
+
+// Función para obtener el color del estado de gasto
+const getColorEstadoGasto = (estado: string) => {
+  switch (estado) {
+    case 'PENDIENTE': return 'bg-yellow-100 text-yellow-800';
+    case 'FACTURADO': return 'bg-blue-100 text-blue-800';
+    case 'COBRADO': return 'bg-green-100 text-green-800';
+    default: return 'bg-gray-100 text-gray-800';
+  }
+};
+
+// Función para obtener descripción corta del gasto
+const getDescripcionCorta = (tipo_gasto: string) => {
+  switch (tipo_gasto) {
+    case 'OTORGAMIENTO': return 'Gastos Otorgamiento';
+    case 'TRANSFERENCIA_PRENDA': return 'Gastos Transf. y Prenda';
+    default: return 'Gasto';
+  }
+};
 
 const LoanDetails = () => {
   const [prestamos, setPrestamos] = useState<PrestamoConCuotas[]>([]);
@@ -79,7 +114,6 @@ const LoanDetails = () => {
   const [error, setError] = useState<string | null>(null);
   const [expandedPrestamos, setExpandedPrestamos] = useState<string[]>([]);
   
-  // ✅ SEPARAR LOS ESTADOS DE LOS DIALOGS COMPLETAMENTE
   const [pagarDialog, setPagarDialog] = useState({
     open: false,
     cuotaId: '',
@@ -96,8 +130,8 @@ const LoanDetails = () => {
   // Función para obtener el nombre correcto del cliente
   const getNombreCliente = (cliente: Cliente) => {
     return cliente.tipo_cliente === "EMPRESA" 
-      ? cliente.empresa || 'Empresa sin nombre'
-      : `${cliente.apellido || ''}, ${cliente.nombre || ''}`.trim().replace(/^,\s*/, '') || 'Sin nombre';
+      ? (cliente.empresa || cliente.nombre)
+      : `${cliente.apellido || ''}, ${cliente.nombre || ''}`.trim();
   };
 
   // Función para formatear fechas correctamente
@@ -107,38 +141,87 @@ const LoanDetails = () => {
     return `${dia}/${mes}/${año}`;
   };
 
- const fetchData = async () => {
-  try {
-    setLoading(true);
-    const { data: prestamosData, error: prestamosError } = await supabase
-      .from('prestamos')
-      .select(`
-        *,
-        cliente:clientes!inner(*),
-        cuotas(*)
-      `)
-      .eq('cliente.eliminado', false) // Solo clientes no eliminados
-      .eq('eliminado', false) // ✅ NUEVO: Solo préstamos no eliminados
-      .order('fecha_inicio', { ascending: false });
+  // Función para obtener el símbolo de moneda correcto
+  const getSimboloMoneda = (moneda: string) => {
+    return (moneda === 'Dolar' || moneda === 'USD') ? 'US$' : '$';
+  };
 
-    if (prestamosError) throw prestamosError;
+  // Función para obtener el código de moneda
+  const getCodigoMoneda = (moneda: string) => {
+    return (moneda === 'Dolar' || moneda === 'USD') ? 'USD' : 'ARS';
+  };
 
-    const prestamosProcessed: PrestamoConCuotas[] = prestamosData.map(prestamo => ({
-      ...prestamo,
-      // ✅ FILTRAR CUOTAS NO ELIMINADAS al contar pagadas
-      cuotas: prestamo.cuotas.filter((c: any) => !c.eliminado), // Solo cuotas no eliminadas
-      cuotas_pagadas: prestamo.cuotas
-        .filter((c: any) => !c.eliminado && c.estado === 'PAGADO').length
-    }));
+  // Función para obtener el color del badge de moneda
+  const getColorMoneda = (moneda: string) => {
+    return (moneda === 'Dolar' || moneda === 'USD') 
+      ? 'bg-green-100 text-green-800' 
+      : 'bg-blue-100 text-blue-800';
+  };
 
-    setPrestamos(prestamosProcessed);
-  } catch (err) {
-    console.error('Error al cargar datos:', err);
-    setError('Error al cargar los datos de préstamos');
-  } finally {
-    setLoading(false);
-  }
-};
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      
+      // Obtener préstamos con información de clientes
+      const { data: prestamosData, error } = await supabase
+        .from('prestamos')
+        .select(`
+          *,
+          cliente:cliente_id(
+            id,
+            tipo_cliente,
+            nombre,
+            apellido,
+            empresa,
+            dni,
+            cuit,
+            eliminado
+          )
+        `)
+        .eq('eliminado', false)
+        .order('fecha_inicio', { ascending: false });
+
+      if (error) throw error;
+
+      // Obtener cuotas y gastos para cada préstamo
+      const prestamosConCuotas: PrestamoConCuotas[] = await Promise.all(
+        (prestamosData || []).map(async (prestamo) => {
+          // Obtener cuotas
+          const { data: cuotasData } = await supabase
+            .from('cuotas')
+            .select('*')
+            .eq('prestamo_id', prestamo.id)
+            .eq('eliminado', false)
+            .order('numero_cuota');
+
+          // Obtener gastos
+          const { data: gastosData } = await supabase
+            .from('gastos_prestamo')
+            .select('*')
+            .eq('prestamo_id', prestamo.id)
+            .eq('eliminado', false)
+            .order('fecha_creacion');
+
+          const cuotasPagadas = cuotasData?.filter(c => c.estado === 'PAGADO').length || 0;
+
+          return {
+            ...prestamo,
+            moneda: prestamo.moneda || 'Pesos',
+            cuotas: cuotasData || [],
+            gastos: gastosData || [],
+            cuotas_pagadas: cuotasPagadas,
+          };
+        })
+      );
+
+      setPrestamos(prestamosConCuotas);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      setError('Error al cargar los datos');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -155,19 +238,24 @@ const LoanDetails = () => {
     }
   };
 
-  // ✅ FUNCIÓN PARA OBTENER COLOR DEL ESTADO DEL PRÉSTAMO
-  const getEstadoPrestamoColor = (estado: Prestamo['estado']) => {
+  const getEstadoPrestamoColor = (estado: string) => {
     switch (estado) {
-      case 'COMPLETADO':
-        return 'text-green-600 bg-green-100';
-      case 'CANCELADO':
-        return 'text-red-600 bg-red-100';
-      default:
-        return 'text-blue-600 bg-blue-100';
+      case 'ACTIVO': return 'bg-green-100 text-green-800';
+      case 'CANCELADO': return 'bg-red-100 text-red-800';
+      case 'COMPLETADO': return 'bg-blue-100 text-blue-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
-  // ✅ FUNCIONES LIMPIAS PARA MANEJAR DIALOGS
+  const getEstadoCuotaColor = (estado: string) => {
+    switch (estado) {
+      case 'PAGADO': return 'bg-green-100 text-green-800';
+      case 'PENDIENTE': return 'bg-yellow-100 text-yellow-800';
+      case 'VENCIDO': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
   const handlePagarClick = (cuota: Cuota, prestamoId: string) => {
     setPagarDialog({
       open: true,
@@ -185,7 +273,6 @@ const LoanDetails = () => {
     });
   };
 
-  // ✅ FUNCIONES PARA CERRAR DIALOGS
   const cerrarPagarDialog = () => {
     setPagarDialog({
       open: false,
@@ -203,7 +290,6 @@ const LoanDetails = () => {
     });
   };
 
-  // ✅ FUNCIONES PARA CONFIRMAR ACCIONES
   const confirmarPago = () => {
     fetchData();
     cerrarPagarDialog();
@@ -214,167 +300,186 @@ const LoanDetails = () => {
     cerrarEditarDialog();
   };
 
-  // ✅ NUEVA FUNCIÓN PARA ELIMINAR PRÉSTAMO CON SOFT DELETE Y CONFIRMACIÓN DOBLE
-const handleEliminarClick = async (prestamo: PrestamoConCuotas) => {
-  // Verificar si tiene cuotas pagadas
-  const cuotasPagadas = prestamo.cuotas.filter(c => c.estado === 'PAGADO').length;
-  
-  // ✅ PRIMERA CONFIRMACIÓN
-  let confirmar1: boolean;
-  if (cuotasPagadas > 0) {
-    confirmar1 = confirm(
-      `⚠️ ATENCIÓN: Este préstamo tiene ${cuotasPagadas} cuotas pagadas.\n\n` +
-      `¿Está seguro de eliminarlo?\n\n` +
-      `Cliente: ${getNombreCliente(prestamo.cliente)}\n` +
-      `Monto: $${prestamo.monto_total.toLocaleString('es-AR')}`
-    );
-  } else {
-    confirmar1 = confirm(
-      `¿Está seguro de eliminar este préstamo?\n\n` +
-      `Cliente: ${getNombreCliente(prestamo.cliente)}\n` +
-      `Monto: $${prestamo.monto_total.toLocaleString('es-AR')}`
-    );
-  }
-  
-  if (!confirmar1) return;
-
-  // ✅ SEGUNDA CONFIRMACIÓN (MÁS SERIA)
-  const confirmar2 = confirm(
-    `⚠️ ÚLTIMA CONFIRMACIÓN\n\n` +
-    `El préstamo será marcado como eliminado.\n` +
-    `Los datos se conservarán para auditoría.\n\n` +
-    `¿Continuar con la eliminación?`
-  );
-  
-  if (!confirmar2) return;
-
-  try {
-    setLoading(true);
+  const handleEliminarClick = async (prestamo: PrestamoConCuotas) => {
+    const cuotasPagadas = prestamo.cuotas.filter(c => c.estado === 'PAGADO').length;
     
-    const fechaEliminacion = new Date().toISOString();
-
-    // ✅ SOFT DELETE - Solo marcar como eliminado
-    
-    // 1. Marcar pagos como eliminados
-    const { error: pagosError } = await supabase
-      .from('pagos')
-      .update({ 
-        eliminado: true, 
-        fecha_eliminacion: fechaEliminacion 
-      })
-      .eq('prestamo_id', prestamo.id)
-      .eq('eliminado', false); // Solo actualizar los no eliminados
-
-    if (pagosError) throw pagosError;
-
-    // 2. Marcar cuotas como eliminadas
-    const { error: cuotasError } = await supabase
-      .from('cuotas')
-      .update({ 
-        eliminado: true, 
-        fecha_eliminacion: fechaEliminacion 
-      })
-      .eq('prestamo_id', prestamo.id)
-      .eq('eliminado', false); // Solo actualizar las no eliminadas
-
-    if (cuotasError) throw cuotasError;
-
-    // 3. Marcar préstamo como eliminado
-    const { error: prestamoError } = await supabase
-      .from('prestamos')
-      .update({ 
-        eliminado: true, 
-        fecha_eliminacion: fechaEliminacion 
-      })
-      .eq('id', prestamo.id);
-
-    if (prestamoError) throw prestamoError;
-
-    // 4. Registrar movimiento de reversión en caja (solo si tenía pagos)
+    let confirmar1: boolean;
     if (cuotasPagadas > 0) {
-      const totalPagado = prestamo.cuotas
-        .filter(c => c.estado === 'PAGADO')
-        .reduce((sum, c) => sum + c.monto, 0);
-
-      await supabase
-        .from('movimientos_caja')
-        .insert([{
-          tipo: 'EGRESO',
-          concepto: `Reversión por eliminación de préstamo (SOFT DELETE) - ${getNombreCliente(prestamo.cliente)} - $${totalPagado.toLocaleString('es-AR')}`,
-          monto: totalPagado
-        }]);
+      confirmar1 = confirm(
+        `⚠️ ATENCIÓN: Este préstamo tiene ${cuotasPagadas} cuotas pagadas.\n\n` +
+        `¿Está seguro de eliminarlo?\n\n` +
+        `Cliente: ${getNombreCliente(prestamo.cliente)}\n` +
+        `Monto: $${prestamo.monto_total.toLocaleString('es-AR')}`
+      );
+    } else {
+      confirmar1 = confirm(
+        `¿Está seguro de eliminar este préstamo?\n\n` +
+        `Cliente: ${getNombreCliente(prestamo.cliente)}\n` +
+        `Monto: $${prestamo.monto_total.toLocaleString('es-AR')}`
+      );
     }
+    
+    if (!confirmar1) return;
 
-    // 5. Refrescar datos
-    await fetchData();
+    const confirmar2 = confirm(
+      `⚠️ ÚLTIMA CONFIRMACIÓN\n\n` +
+      `El préstamo será marcado como eliminado.\n` +
+      `Los datos se conservarán para auditoría.\n\n` +
+      `¿Continuar con la eliminación?`
+    );
     
-    alert('✅ Préstamo eliminado exitosamente\n\nNota: Los datos se conservan en la base de datos para auditoría.');
-    
-  } catch (err) {
-    console.error('Error eliminando préstamo:', err);
-    alert('❌ Error al eliminar el préstamo. Intente nuevamente.');
-  } finally {
-    setLoading(false);
-  }
-};
+    if (!confirmar2) return;
+
+    try {
+      setLoading(true);
+      
+      const fechaEliminacion = new Date().toISOString();
+
+      const { error: pagosError } = await supabase
+        .from('pagos')
+        .update({ 
+          eliminado: true, 
+          fecha_eliminacion: fechaEliminacion 
+        })
+        .eq('prestamo_id', prestamo.id)
+        .eq('eliminado', false);
+
+      if (pagosError) throw pagosError;
+
+      const { error: cuotasError } = await supabase
+        .from('cuotas')
+        .update({ 
+          eliminado: true, 
+          fecha_eliminacion: fechaEliminacion 
+        })
+        .eq('prestamo_id', prestamo.id)
+        .eq('eliminado', false);
+
+      if (cuotasError) throw cuotasError;
+
+      const { error: prestamoError } = await supabase
+        .from('prestamos')
+        .update({ 
+          eliminado: true, 
+          fecha_eliminacion: fechaEliminacion 
+        })
+        .eq('id', prestamo.id);
+
+      if (prestamoError) throw prestamoError;
+
+      if (cuotasPagadas > 0) {
+        const totalPagado = prestamo.cuotas
+          .filter(c => c.estado === 'PAGADO')
+          .reduce((sum, c) => sum + c.monto, 0);
+        
+        await supabase
+          .from('movimientos_caja')
+          .insert([{
+            tipo: 'EGRESO',
+            concepto: `Reversión por eliminación de préstamo (SOFT DELETE) - ${getNombreCliente(prestamo.cliente)} - $${totalPagado.toLocaleString('es-AR')}`,
+            monto: totalPagado
+          }]);
+      }
+
+      await fetchData();
+      
+      alert('Préstamo eliminado exitosamente\n\nNota: Los datos se conservan en la base de datos para auditoría.');
+      
+    } catch (err) {
+      console.error('Error eliminando préstamo:', err);
+      alert('Error al eliminar el préstamo. Intente nuevamente.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Filtro mejorado que incluye búsqueda por documento
   const filteredPrestamos = prestamos.filter(prestamo => {
-    const nombreCliente = getNombreCliente(prestamo.cliente);
-    const documento = prestamo.cliente.dni || prestamo.cliente.cuit || '';
+    const nombreCliente = getNombreCliente(prestamo.cliente).toLowerCase();
+    const documento = prestamo.cliente.tipo_cliente === "EMPRESA" 
+      ? prestamo.cliente.cuit || ''
+      : prestamo.cliente.dni || '';
     
     return (
-      nombreCliente.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      documento.includes(searchTerm)
+      nombreCliente.includes(searchTerm.toLowerCase()) ||
+      documento.includes(searchTerm.toLowerCase())
     );
   });
 
-  const exportToExcel = () => {
+  const exportToExcel = async () => {
     if (filteredPrestamos.length === 0) {
       alert('No hay datos para exportar');
       return;
     }
 
-    const excelData: ExcelRow[] = filteredPrestamos.flatMap(prestamo => 
-      prestamo.cuotas.map(cuota => ({
-        'Cliente': getNombreCliente(prestamo.cliente),
-        'Documento': prestamo.cliente.tipo_cliente === "EMPRESA" 
-          ? prestamo.cliente.cuit || '' 
-          : prestamo.cliente.dni || '',
-        'Número de Cuota': cuota.numero_cuota,
-        'Fecha Vencimiento': formatearFecha(cuota.fecha_vencimiento),
-        'Monto': cuota.monto,
-        'Estado': cuota.estado,
-        'Fecha Pago': cuota.fecha_pago ? formatearFecha(cuota.fecha_pago) : '',
-        'Tasa Interés': prestamo.tasa_interes
-      }))
-    );
+    try {
+      const excelData: ExcelRow[] = [];
 
-    let csvContent = '\ufeff';
-    const headers = Object.keys(excelData[0]) as (keyof ExcelRow)[];
-    csvContent += headers.join(';') + '\n';
+      filteredPrestamos.forEach(prestamo => {
+        // Primero agregar gastos
+        prestamo.gastos.forEach(gasto => {
+          excelData.push({
+            Cliente: getNombreCliente(prestamo.cliente),
+            Documento: prestamo.cliente.tipo_cliente === "EMPRESA" 
+              ? prestamo.cliente.cuit || 'Sin CUIT'
+              : prestamo.cliente.dni || 'Sin DNI',
+            Moneda: getCodigoMoneda(gasto.moneda),
+            Tipo: 'GASTO',
+            'Número de Cuota': getDescripcionCorta(gasto.tipo_gasto),
+            'Fecha Vencimiento': 'Inmediato',
+            'Monto': gasto.monto,
+            'Estado': gasto.estado,
+            'Fecha Pago': gasto.estado === 'COBRADO' ? 'Cobrado' : 'Pendiente',
+            'Tasa Interés': 0
+          });
+        });
 
-    excelData.forEach(row => {
-      const values = headers.map(header => {
-        const value = row[header];
-        return typeof value === 'string' ? `"${value}"` : value;
+        // Luego agregar cuotas
+        prestamo.cuotas.forEach(cuota => {
+          excelData.push({
+            Cliente: getNombreCliente(prestamo.cliente),
+            Documento: prestamo.cliente.tipo_cliente === "EMPRESA" 
+              ? prestamo.cliente.cuit || 'Sin CUIT'
+              : prestamo.cliente.dni || 'Sin DNI',
+            Moneda: getCodigoMoneda(prestamo.moneda),
+            Tipo: 'CUOTA',
+            'Número de Cuota': cuota.numero_cuota,
+            'Fecha Vencimiento': formatearFecha(cuota.fecha_vencimiento),
+            'Monto': cuota.monto,
+            'Estado': cuota.estado,
+            'Fecha Pago': cuota.fecha_pago ? formatearFecha(cuota.fecha_pago) : 'No pagado',
+            'Tasa Interés': prestamo.tasa_interes
+          });
+        });
       });
-      csvContent += values.join(';') + '\n';
-    });
 
-    const blob = new Blob([csvContent], { type: 'application/vnd.ms-excel;charset=utf-8' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `prestamos_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(excelData);
+      
+      ws['!cols'] = [
+        { wch: 25 }, { wch: 15 }, { wch: 10 }, { wch: 10 }, 
+        { wch: 15 }, { wch: 15 }, { wch: 12 }, { wch: 12 }, 
+        { wch: 15 }, { wch: 12 }
+      ];
+      
+      XLSX.utils.book_append_sheet(wb, ws, "Préstamos y Gastos");
+      
+      const fechaActual = new Date().toISOString().split('T')[0];
+      XLSX.writeFile(wb, `prestamos_cuotas_gastos_${fechaActual}.xlsx`);
+      
+      console.log('Archivo exportado exitosamente con gastos incluidos');
+    } catch (error) {
+      console.error('Error exportando:', error);
+      alert('Error al exportar los datos');
+    }
   };
 
   if (loading) {
-    return <div className="flex justify-center p-4">Cargando...</div>;
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-lg">Cargando préstamos y cuotas...</div>
+      </div>
+    );
   }
 
   if (error) {
@@ -414,7 +519,6 @@ const handleEliminarClick = async (prestamo: PrestamoConCuotas) => {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-
             {filteredPrestamos.some(p => p.cuotas.some(c => c.estado === 'VENCIDO')) && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
@@ -432,6 +536,7 @@ const handleEliminarClick = async (prestamo: PrestamoConCuotas) => {
                     <TableHead></TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>Documento</TableHead>
+                    <TableHead>Moneda</TableHead> 
                     <TableHead className="text-right">Monto Total</TableHead>
                     <TableHead className="text-right">Cuotas Pagadas</TableHead>
                     <TableHead>Estado</TableHead>
@@ -460,8 +565,13 @@ const handleEliminarClick = async (prestamo: PrestamoConCuotas) => {
                             : prestamo.cliente.dni || 'Sin DNI'
                           }
                         </TableCell>
+                        <TableCell>
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getColorMoneda(prestamo.moneda)}`}>
+                            {getCodigoMoneda(prestamo.moneda)}
+                          </span>
+                        </TableCell>
                         <TableCell className="text-right">
-                          ${prestamo.monto_total.toLocaleString('es-AR')}
+                          {getSimboloMoneda(prestamo.moneda)}{prestamo.monto_total.toLocaleString('es-AR')}
                         </TableCell>
                         <TableCell className="text-right">
                           {prestamo.cuotas_pagadas}/{prestamo.cantidad_cuotas}
@@ -480,75 +590,151 @@ const handleEliminarClick = async (prestamo: PrestamoConCuotas) => {
                           </div>
                         </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
- <div className="flex items-center gap-2">
-   <Button
-     size="sm"
-     variant="outline"
-     onClick={() => handleEditarClick(prestamo)}
-     className="h-8 px-3 hover:bg-blue-50"
-   >
-     <Edit className="h-3 w-3 mr-1" />
-     Editar
-   </Button>
-   <Button
-     size="sm"
-     variant="outline"
-     onClick={() => handleEliminarClick(prestamo)}
-     className="h-8 px-3 text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
-   >
-     <Trash2 className="h-3 w-3 mr-1" />
-     Eliminar
-   </Button>
- </div>
-</TableCell>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleEditarClick(prestamo)}
+                              className="h-8 px-3 hover:bg-blue-50"
+                            >
+                              <Edit className="h-3 w-3 mr-1" />
+                              Editar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleEliminarClick(prestamo)}
+                              className="h-8 px-3 text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+                            >
+                              <Trash2 className="h-3 w-3 mr-1" />
+                              Eliminar
+                            </Button>
+                          </div>
+                        </TableCell>
                       </TableRow>
-                      {expandedPrestamos.includes(prestamo.id) && prestamo.cuotas.map(cuota => (
-                        <TableRow key={cuota.id} className="bg-slate-50">
-                          <TableCell></TableCell>
-                          <TableCell colSpan={2} className="text-sm">
-                            <div>
-                              <div className="font-medium">Cuota {cuota.numero_cuota}</div>
-                              <div className="text-xs text-slate-500">
-                                Vencimiento: {formatearFecha(cuota.fecha_vencimiento)}
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right text-sm">
-                            ${cuota.monto.toLocaleString('es-AR')}
-                          </TableCell>
-                          <TableCell className="text-right text-sm">
-                            {cuota.fecha_pago ? 
-                              formatearFecha(cuota.fecha_pago) : 
-                              '-'}
-                          </TableCell>
-                          <TableCell colSpan={3}>
-                            <div className="flex items-center space-x-2">
-                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getEstadoColor(cuota.estado)}`}>
-                                {cuota.estado}
-                              </span>
-                              
-                              {cuota.estado !== 'PAGADO' && (
-                                <Button 
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handlePagarClick(cuota, prestamo.id);
-                                  }}
-                                >
-                                  Pagar
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      
+                      {expandedPrestamos.includes(prestamo.id) && (
+                        <>
+                          {/* MOSTRAR GASTOS PRIMERO */}
+                          {prestamo.gastos.map((gasto) => (
+                            <TableRow key={`gasto-${gasto.id}`} className="bg-orange-50 border-l-4 border-orange-400">
+                              <TableCell></TableCell>
+                              <TableCell colSpan={3} className="text-sm">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2 h-2 bg-orange-400 rounded-full"></div>
+                                  <div>
+                                    <div className="font-medium text-orange-800">
+                                      {getDescripcionCorta(gasto.tipo_gasto)}
+                                    </div>
+                                    <div className="text-xs text-orange-600">
+                                      Creado: {new Date(gasto.fecha_creacion).toLocaleDateString('es-AR')}
+                                    </div>
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right text-sm">
+                                <div className="font-medium text-orange-700">
+                                  {getSimboloMoneda(gasto.moneda)}{gasto.monto.toLocaleString('es-AR')}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right text-sm">
+                                <span className="text-orange-500">-</span>
+                              </TableCell>
+                              <TableCell>
+                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getColorEstadoGasto(gasto.estado)}`}>
+                                  {gasto.estado}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <div className="w-full bg-orange-200 rounded-full h-2.5">
+                                  <div 
+                                    className={`h-2.5 rounded-full ${gasto.estado === 'COBRADO' ? 'bg-green-500' : gasto.estado === 'FACTURADO' ? 'bg-blue-500' : 'bg-orange-300'}`}
+                                    style={{ width: gasto.estado === 'COBRADO' ? '100%' : gasto.estado === 'FACTURADO' ? '50%' : '10%' }}
+                                  ></div>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {gasto.estado === 'PENDIENTE' && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8 px-3 text-xs text-orange-600 border-orange-200 hover:bg-orange-50"
+                                  >
+                                    Facturar
+                                  </Button>
+                                )}
+                                {gasto.estado === 'FACTURADO' && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8 px-3 text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
+                                  >
+                                    Cobrar
+                                  </Button>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          
+                          {/* SEPARADOR VISUAL SI HAY GASTOS */}
+                          {prestamo.gastos.length > 0 && (
+                            <TableRow className="bg-slate-100">
+                              <TableCell colSpan={9} className="text-center text-xs text-slate-500 py-1">
+                                ─── Cuotas del Préstamo ───
+                              </TableCell>
+                            </TableRow>
+                          )}
+                          
+                          {/* MOSTRAR CUOTAS NORMALES */}
+                          {prestamo.cuotas.map(cuota => (
+                            <TableRow key={cuota.id} className="bg-slate-50">
+                              <TableCell></TableCell>
+                              <TableCell colSpan={3} className="text-sm">
+                                <div>
+                                  <div className="font-medium">Cuota {cuota.numero_cuota}</div>
+                                  <div className="text-xs text-slate-500">
+                                    Vencimiento: {formatearFecha(cuota.fecha_vencimiento)}
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right text-sm">
+                                {getSimboloMoneda(prestamo.moneda)}{cuota.monto.toLocaleString('es-AR')}
+                              </TableCell>
+                              <TableCell className="text-right text-sm">
+                                {cuota.fecha_pago ? 
+                                  formatearFecha(cuota.fecha_pago) : 
+                                  '-'}
+                              </TableCell>
+                              <TableCell colSpan={3}>
+                                <div className="flex items-center space-x-2">
+                                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getEstadoColor(cuota.estado)}`}>
+                                    {cuota.estado}
+                                  </span>
+                                  
+                                  {cuota.estado !== 'PAGADO' && (
+                                    <Button 
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handlePagarClick(cuota, prestamo.id);
+                                      }}
+                                    >
+                                      Pagar
+                                    </Button>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </>
+                      )}
                     </React.Fragment>
                   ))}
                 </TableBody>
               </Table>
             </div>
             
-            {/* Vista de tarjetas para móviles - ACTUALIZADA */}
+            {/* Vista de tarjetas para móviles */}
             <div className="block md:hidden space-y-4">
               {filteredPrestamos.map(prestamo => (
                 <div key={prestamo.id} className="border rounded-lg shadow-sm overflow-hidden">
@@ -568,15 +754,18 @@ const handleEliminarClick = async (prestamo: PrestamoConCuotas) => {
                             : `DNI: ${prestamo.cliente.dni || 'Sin DNI'}`
                           }
                         </div>
-                        <div className="text-xs">
+                        <div className="flex gap-2 mt-1">
                           <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getEstadoPrestamoColor(prestamo.estado)}`}>
                             {prestamo.estado}
+                          </span>
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getColorMoneda(prestamo.moneda)}`}>
+                            {getCodigoMoneda(prestamo.moneda)}
                           </span>
                         </div>
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="font-medium">${prestamo.monto_total.toLocaleString('es-AR')}</div>
+                      <div className="font-medium">{getSimboloMoneda(prestamo.moneda)}{prestamo.monto_total.toLocaleString('es-AR')}</div>
                       <div className="text-sm text-slate-500">
                         {prestamo.cuotas_pagadas}/{prestamo.cantidad_cuotas} cuotas
                       </div>
@@ -616,6 +805,34 @@ const handleEliminarClick = async (prestamo: PrestamoConCuotas) => {
                   
                   {expandedPrestamos.includes(prestamo.id) && (
                     <div className="bg-slate-50 divide-y divide-slate-200">
+                      {/* GASTOS PRIMERO EN MÓVIL */}
+                      {prestamo.gastos.map((gasto) => (
+                        <div key={`gasto-${gasto.id}`} className="p-4 bg-orange-50 border-l-4 border-orange-400">
+                          <div className="flex justify-between items-center mb-2">
+                            <div>
+                              <div className="font-medium text-orange-800">{getDescripcionCorta(gasto.tipo_gasto)}</div>
+                              <div className="text-xs text-orange-600">Creado: {new Date(gasto.fecha_creacion).toLocaleDateString('es-AR')}</div>
+                            </div>
+                            <div className="font-medium text-orange-700">{getSimboloMoneda(gasto.moneda)}{gasto.monto.toLocaleString('es-AR')}</div>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getColorEstadoGasto(gasto.estado)}`}>
+                              {gasto.estado}
+                            </span>
+                            {gasto.estado === 'PENDIENTE' && <Button size="sm" variant="outline">Facturar</Button>}
+                            {gasto.estado === 'FACTURADO' && <Button size="sm" variant="outline">Cobrar</Button>}
+                          </div>
+                        </div>
+                      ))}
+                      
+                      {/* SEPARADOR SI HAY GASTOS */}
+                      {prestamo.gastos.length > 0 && (
+                        <div className="p-2 bg-slate-100 text-center text-xs text-slate-500">
+                          ─── Cuotas del Préstamo ───
+                        </div>
+                      )}
+                      
+                      {/* CUOTAS NORMALES */}
                       {prestamo.cuotas.map(cuota => (
                         <div key={cuota.id} className="p-4">
                           <div className="flex justify-between items-center mb-2">
@@ -625,7 +842,7 @@ const handleEliminarClick = async (prestamo: PrestamoConCuotas) => {
                                 Vencimiento: {formatearFecha(cuota.fecha_vencimiento)}
                               </div>
                             </div>
-                            <div className="font-medium">${cuota.monto.toLocaleString('es-AR')}</div>
+                            <div className="font-medium">{getSimboloMoneda(prestamo.moneda)}{cuota.monto.toLocaleString('es-AR')}</div>
                           </div>
                           <div className="flex justify-between items-center">
                             <div className="text-sm text-slate-500">
@@ -655,7 +872,7 @@ const handleEliminarClick = async (prestamo: PrestamoConCuotas) => {
                 </div>
               ))}
             </div>
-
+            
             {/* Mostrar mensaje si no hay préstamos */}
             {filteredPrestamos.length === 0 && !loading && (
               <div className="text-center py-8 text-slate-500">
@@ -666,7 +883,7 @@ const handleEliminarClick = async (prestamo: PrestamoConCuotas) => {
         </CardContent>
       </Card>
 
-      {/* ✅ RENDERIZADO LIMPIO DE DIALOGS - SIEMPRE RENDERIZAR, CONTROLAR SOLO CON 'open' */}
+      {/* Diálogos */}
       <PagarDialog
         open={pagarDialog.open}
         onOpenChange={(open) => !open && cerrarPagarDialog()}

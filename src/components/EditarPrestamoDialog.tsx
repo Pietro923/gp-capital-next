@@ -47,6 +47,7 @@ interface Prestamo {
   cantidad_cuotas: number;
   estado: 'ACTIVO' | 'CANCELADO' | 'COMPLETADO';
   fecha_inicio: string;
+  moneda: string; // 👈 CAMPO AGREGADO
 }
 
 interface PrestamoConCuotas extends Prestamo {
@@ -76,7 +77,8 @@ export function EditarPrestamoDialog({ open, onOpenChange, onConfirm, prestamo }
     tasaInteres: 0,
     cantidadCuotas: 0,
     estado: 'ACTIVO' as 'ACTIVO' | 'CANCELADO' | 'COMPLETADO',
-    fechaInicio: ""
+    fechaInicio: "",
+    moneda: "Pesos" as "Pesos" | "Dolar"  
   });
 
   // Estados para cuotas
@@ -105,7 +107,8 @@ export function EditarPrestamoDialog({ open, onOpenChange, onConfirm, prestamo }
         tasaInteres: prestamo.tasa_interes,
         cantidadCuotas: prestamo.cantidad_cuotas,
         estado: prestamo.estado,
-        fechaInicio: formatearFecha(prestamo.fecha_inicio)
+        fechaInicio: formatearFecha(prestamo.fecha_inicio),
+        moneda: prestamo.moneda === "Pesos" || prestamo.moneda === "Dolar" ? prestamo.moneda : "Pesos"
       });
       setCuotasEditadas([...prestamo.cuotas]);
       setActiveSection('general');
@@ -184,7 +187,8 @@ export function EditarPrestamoDialog({ open, onOpenChange, onConfirm, prestamo }
           tasa_interes: formData.tasaInteres,
           cantidad_cuotas: formData.cantidadCuotas,
           estado: formData.estado,
-          fecha_inicio: formData.fechaInicio
+          fecha_inicio: formData.fechaInicio,
+          moneda: formData.moneda
         })
         .eq('id', prestamo.id);
 
@@ -355,6 +359,18 @@ export function EditarPrestamoDialog({ open, onOpenChange, onConfirm, prestamo }
                       placeholder="Monto total del préstamo"
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label>Moneda</Label>
+                    <Select value={formData.moneda} onValueChange={(value) => setFormData(prev => ({ ...prev, moneda: value as "Pesos" | "Dolar" }))}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar moneda" />
+                      </SelectTrigger>
+                      <SelectContent>
+                      <SelectItem value="Pesos">Pesos</SelectItem>
+                      <SelectItem value="Dolar">Dólar</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
                   <div className="space-y-2">
                     <Label>Tasa de Interés Anual (%)</Label>

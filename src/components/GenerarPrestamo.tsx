@@ -34,6 +34,11 @@ interface GenerarPrestamoProps {
     moneda: string;        // Agregar
     fechaInicio: string;   // Agregar
     aplicarIVA: boolean;   // Agregar
+    // Nuevos campos de gastos
+  aplicarGastosOtorgamiento: boolean;
+  gastosOtorgamiento: number;
+  aplicarGastosTransferencia: boolean;
+  gastosTransferenciaPrenda: number;
     cuotas: Array<{
       numero: number;
       fechaVencimiento: string;
@@ -98,7 +103,8 @@ export function GenerarPrestamo({ open, onOpenChange, onConfirm, prestamoData }:
         tasa_interes: prestamoData.tasaInteres,
         cantidad_cuotas: prestamoData.plazo,
         estado: 'ACTIVO',
-        fecha_inicio: prestamoData.fechaInicio
+        fecha_inicio: prestamoData.fechaInicio,
+        moneda: prestamoData.moneda || 'Pesos'
       }])
       .select()
       .single();
@@ -119,6 +125,40 @@ export function GenerarPrestamo({ open, onOpenChange, onConfirm, prestamoData }:
       .insert(cuotasInsert);
       
     if (cuotasError) throw cuotasError;
+
+    const gastosParaInsertar = [];
+
+    // NUEVO: Crear gastos si están seleccionados
+if (prestamoData.aplicarGastosOtorgamiento && prestamoData.gastosOtorgamiento > 0) {
+  gastosParaInsertar.push({
+    prestamo_id: prestamo.id,
+    tipo_gasto: 'OTORGAMIENTO',
+    monto: prestamoData.gastosOtorgamiento,
+    moneda: prestamoData.moneda || 'Pesos',
+    descripcion: 'Gastos administrativos de otorgamiento de crédito',
+    estado: 'PENDIENTE'
+  });
+}
+
+if (prestamoData.aplicarGastosTransferencia && prestamoData.gastosTransferenciaPrenda > 0) {
+  gastosParaInsertar.push({
+    prestamo_id: prestamo.id,
+    tipo_gasto: 'TRANSFERENCIA_PRENDA',
+    monto: prestamoData.gastosTransferenciaPrenda,
+    moneda: prestamoData.moneda || 'Pesos',
+    descripcion: 'Gastos de transferencia vehicular y constitución de prenda',
+    estado: 'PENDIENTE'
+  });
+}
+
+// Insertar gastos si existen
+if (gastosParaInsertar.length > 0) {
+  const { error: gastosError } = await supabase
+    .from('gastos_prestamo')
+    .insert(gastosParaInsertar);
+    
+  if (gastosError) throw gastosError;
+}
     
     // 3. Registrar el movimiento en caja
     const { error: movimientoError } = await supabase
@@ -195,6 +235,17 @@ export function GenerarPrestamo({ open, onOpenChange, onConfirm, prestamoData }:
     {prestamoData.aplicarIVA && (
       <div><strong>IVA:</strong> {prestamoData.iva}%</div>
     )}
+    {(prestamoData.aplicarGastosOtorgamiento || prestamoData.aplicarGastosTransferencia) && (
+  <div className="col-span-2 border-t pt-2">
+    <strong>Gastos Adicionales:</strong>
+    {prestamoData.aplicarGastosOtorgamiento && (
+      <div className="text-xs">• Otorgamiento: ${prestamoData.gastosOtorgamiento.toLocaleString('es-AR')}</div>
+    )}
+    {prestamoData.aplicarGastosTransferencia && (
+      <div className="text-xs">• Transferencia y Prenda: ${prestamoData.gastosTransferenciaPrenda.toLocaleString('es-AR')}</div>
+    )}
+  </div>
+)}
   </div>
 </div>
 

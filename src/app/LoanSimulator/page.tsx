@@ -80,12 +80,17 @@ const LoanSimulator: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [expandedCuota, setExpandedCuota] = useState<number | null>(null);
   const [clientes, setClientes] = useState<Cliente[]>([]);
-    const [clienteId, setClienteId] = useState<string>("");
+  const [clienteId, setClienteId] = useState<string>("");
 
   const [, setProveedores] = useState<Proveedor[]>([]);
   const [, setIsLoading] = useState(true);
   const [, setError] = useState<string | null>(null);
   const [fechaInicio, setFechaInicio] = useState<string>(new Date().toISOString().split('T')[0]);
+
+  const [aplicarGastosOtorgamiento, setAplicarGastosOtorgamiento] = useState<boolean>(false);
+  const [gastosOtorgamiento, setGastosOtorgamiento] = useState<number>(5000);
+  const [aplicarGastosTransferencia, setAplicarGastosTransferencia] = useState<boolean>(false);
+  const [gastosTransferenciaPrenda, setGastosTransferenciaPrenda] = useState<number>(3000);
 
   useEffect(() => {
     const fetchProveedores = async () => {
@@ -535,9 +540,171 @@ const exportToExcel = () => {
               </div>
             )}
           </div>
+         <div className="col-span-full mt-6">
+  <Card className="border-orange-200 bg-gradient-to-r from-orange-50 to-yellow-50">
+    <CardHeader className="pb-4">
+      <CardTitle className="flex items-center gap-2 text-orange-800">
+        <div className="w-8 h-8 bg-orange-200 rounded-full flex items-center justify-center">
+          💼
+        </div>
+        Gastos Adicionales del Crédito
+      </CardTitle>
+      <p className="text-sm text-orange-600">
+        Configure los gastos asociados que se cobrarán al cliente además del monto del préstamo
+      </p>
+    </CardHeader>
+    <CardContent className="space-y-6">
+      {/* Gastos de Otorgamiento */}
+      <div className="border border-orange-200 rounded-lg p-4 bg-white/50">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center space-x-3">
+            <Checkbox 
+              id="aplicarGastosOtorgamiento"
+              checked={aplicarGastosOtorgamiento}
+              onCheckedChange={(checked) => {
+                setAplicarGastosOtorgamiento(checked as boolean);
+                if (!checked) {
+                  setGastosOtorgamiento(0);
+                }
+              }}
+              className="data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
+            />
+            <div className="flex-1">
+              <Label htmlFor="aplicarGastosOtorgamiento" className="text-sm font-semibold text-slate-800 cursor-pointer">
+                Gastos de Otorgamiento de Crédito
+              </Label>
+              <p className="text-xs text-slate-500 mt-1">
+                Gastos administrativos obligatorios del otorgamiento del crédito
+              </p>
+            </div>
+          </div>
+          {aplicarGastosOtorgamiento && (
+            <div className="text-right">
+              <div className="text-lg font-bold text-orange-600">
+                {moneda === 'Dolar' ? 'US$' : '$'}{gastosOtorgamiento.toLocaleString('es-AR')}
+              </div>
+            </div>
+          )}
+        </div>
+        
+        {aplicarGastosOtorgamiento && (
+          <div className="mt-4 space-y-2">
+            <Label className="text-xs font-medium text-slate-600">Monto del gasto</Label>
+            <Input
+              type="number"
+              value={gastosOtorgamiento || ''}
+              onChange={(e) => setGastosOtorgamiento(parseFloat(e.target.value) || 0)}
+              placeholder="Ej: 5000"
+              className="border-orange-200 focus:border-orange-400"
+              min="0"
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Gastos de Transferencia y Prenda */}
+      <div className="border border-orange-200 rounded-lg p-4 bg-white/50">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center space-x-3">
+            <Checkbox 
+              id="aplicarGastosTransferencia"
+              checked={aplicarGastosTransferencia}
+              onCheckedChange={(checked) => {
+                setAplicarGastosTransferencia(checked as boolean);
+                if (!checked) {
+                  setGastosTransferenciaPrenda(0);
+                }
+              }}
+              className="data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
+            />
+            <div className="flex-1">
+              <Label htmlFor="aplicarGastosTransferencia" className="text-sm font-semibold text-slate-800 cursor-pointer">
+                Gastos de Transferencia y Prenda
+              </Label>
+              <p className="text-xs text-slate-500 mt-1">
+                Gastos de transferencia vehicular y constitución de prenda (opcional)
+              </p>
+            </div>
+          </div>
+          {aplicarGastosTransferencia && (
+            <div className="text-right">
+              <div className="text-lg font-bold text-orange-600">
+                {moneda === 'Dolar' ? 'US$' : '$'}{gastosTransferenciaPrenda.toLocaleString('es-AR')}
+              </div>
+            </div>
+          )}
+        </div>
+        
+        {aplicarGastosTransferencia && (
+          <div className="mt-4 space-y-2">
+            <Label className="text-xs font-medium text-slate-600">Monto del gasto</Label>
+            <Input
+              type="number"
+              value={gastosTransferenciaPrenda || ''}
+              onChange={(e) => setGastosTransferenciaPrenda(parseFloat(e.target.value) || 0)}
+              placeholder="Ej: 3000"
+              className="border-orange-200 focus:border-orange-400"
+              min="0"
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Resumen de gastos */}
+      {(aplicarGastosOtorgamiento || aplicarGastosTransferencia) && (
+        <div className="border-t border-orange-200 pt-4">
+          <div className="bg-gradient-to-r from-orange-100 to-yellow-100 rounded-lg p-4 border border-orange-200">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold text-orange-800 flex items-center gap-2">
+                📊 Resumen de Gastos Adicionales
+              </h4>
+            </div>
+            
+            <div className="space-y-2 text-sm">
+              {aplicarGastosOtorgamiento && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-700">Gastos de Otorgamiento:</span>
+                  <span className="font-semibold text-orange-700">
+                    {moneda === 'Dolar' ? 'US$' : '$'}{gastosOtorgamiento.toLocaleString('es-AR')}
+                  </span>
+                </div>
+              )}
+              
+              {aplicarGastosTransferencia && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-700">Gastos Transferencia y Prenda:</span>
+                  <span className="font-semibold text-orange-700">
+                    {moneda === 'Dolar' ? 'US$' : '$'}{gastosTransferenciaPrenda.toLocaleString('es-AR')}
+                  </span>
+                </div>
+              )}
+              
+              <div className="border-t border-orange-300 pt-2 mt-3">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-orange-800">Total Gastos Adicionales:</span>
+                  <span className="font-bold text-lg text-orange-800 bg-orange-200 px-3 py-1 rounded-full">
+                    {moneda === 'Dolar' ? 'US$' : '$'}
+                    {((aplicarGastosOtorgamiento ? gastosOtorgamiento : 0) + 
+                      (aplicarGastosTransferencia ? gastosTransferenciaPrenda : 0)).toLocaleString('es-AR')}
+                  </span>
+                </div>
+              </div>
+              
+              <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <p className="text-xs text-blue-700 text-center">
+                  💡 Estos gastos se cobrarán al cliente por separado y aparecerán como ítems adicionales en el detalle del préstamo
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </CardContent>
+  </Card>
+</div>
           
           {/* Botones responsivos */}
-          <div className="flex flex-wrap gap-2 justify-between items-center mb-6">
+          <div className="flex flex-wrap gap-2 justify-between items-center mb-6 mt-10">
             <Button onClick={calcularCuotas}>
               <Calculator className="mr-2 h-4 w-4" />
               <span className="hidden sm:inline">Calcular</span>
@@ -569,6 +736,11 @@ const exportToExcel = () => {
                   moneda,           // Agregar
                   fechaInicio,      // Agregar
                   aplicarIVA,       // Agregar
+                  // Agregar gastos opcionales
+                  aplicarGastosOtorgamiento,
+                  gastosOtorgamiento: aplicarGastosOtorgamiento ? gastosOtorgamiento : 0,
+                  aplicarGastosTransferencia,
+                  gastosTransferenciaPrenda: aplicarGastosTransferencia ? gastosTransferenciaPrenda : 0,
                   cuotas: cuotas.map(c => ({
                     numero: c.numero,
                     fechaVencimiento: c.fechaVencimiento,
