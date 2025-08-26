@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from '@/utils/supabase/client';
 import { AlertCircle, Calculator } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface Cliente {
   id: string;
@@ -63,12 +64,23 @@ interface EditarPrestamoDialogProps {
   prestamo: PrestamoConCuotas;
 }
 
+interface GastoPrestamo {
+  id: string;
+  prestamo_id: string;
+  tipo_gasto: 'OTORGAMIENTO' | 'TRANSFERENCIA_PRENDA';
+  monto: number;
+  moneda: string;
+  estado: 'PENDIENTE' | 'FACTURADO' | 'COBRADO';
+  descripcion: string;
+  fecha_creacion: string;
+}
+
 export function EditarPrestamoDialog({ open, onOpenChange, onConfirm, prestamo }: EditarPrestamoDialogProps) {
   // Estados básicos
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [activeSection, setActiveSection] = useState<'general' | 'cuotas'>('general');
+  const [activeSection, setActiveSection] = useState<'general' | 'cuotas' | 'gastos'>('general');
   
   // Estados del formulario
   const [formData, setFormData] = useState({
@@ -84,6 +96,13 @@ export function EditarPrestamoDialog({ open, onOpenChange, onConfirm, prestamo }
   // Estados para cuotas
   const [cuotasEditadas, setCuotasEditadas] = useState<Cuota[]>([]);
   const [cuotaEditando, setCuotaEditando] = useState<string | null>(null);
+
+ // Estados para Gastos
+  const [gastosExistentes, setGastosExistentes] = useState<GastoPrestamo[]>([]);
+  const [nuevoGastoOtorgamiento, setNuevoGastoOtorgamiento] = useState<number>(5000);
+  const [nuevoGastoTransferencia, setNuevoGastoTransferencia] = useState<number>(3000);
+  const [agregarGastoOtorgamiento, setAgregarGastoOtorgamiento] = useState<boolean>(false);
+  const [agregarGastoTransferencia, setAgregarGastoTransferencia] = useState<boolean>(false);
 
   // Obtener nombre del cliente
   const getNombreCliente = (cliente: Cliente) => {
@@ -115,8 +134,79 @@ export function EditarPrestamoDialog({ open, onOpenChange, onConfirm, prestamo }
       setError(null);
       setCuotaEditando(null);
       cargarClientes();
+      cargarGastosExistentes(); // AGREGAR ESTA LÍNEA
     }
   }, [open, prestamo]);
+
+  const cargarGastosExistentes = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('gastos_prestamo')
+      .select('*')
+      .eq('prestamo_id', prestamo.id)
+      .eq('eliminado', false)
+      .order('fecha_creacion');
+
+    if (error) throw error;
+    setGastosExistentes(data || []);
+    
+    // Verificar qué tipos de gastos ya existen para no duplicar
+    const tieneOtorgamiento = data?.some(g => g.tipo_gasto === 'OTORGAMIENTO');
+    const tieneTransferencia = data?.some(g => g.tipo_gasto === 'TRANSFERENCIA_PRENDA');
+    
+    setAgregarGastoOtorgamiento(!tieneOtorgamiento);
+    setAgregarGastoTransferencia(!tieneTransferencia);
+  } catch (error) {
+    console.error('Error cargando gastos:', error);
+  }
+};
+
+// 6. Función para agregar gastos nuevos
+const agregarGastosNuevos = async () => {
+  try {
+    const gastosParaAgregar = [];
+
+    // Agregar gasto de otorgamiento si está seleccionado y no existe
+    if (agregarGastoOtorgamiento && !gastosExistentes.some(g => g.tipo_gasto === 'OTORGAMIENTO')) {
+      gastosParaAgregar.push({
+        prestamo_id: prestamo.id,
+        tipo_gasto: 'OTORGAMIENTO',
+        monto: nuevoGastoOtorgamiento,
+        moneda: formData.moneda,
+        descripcion: 'Gastos administrativos de otorgamiento de crédito (agregado posteriormente)',
+        estado: 'PENDIENTE'
+      });
+    }
+
+    // Agregar gasto de transferencia si está seleccionado y no existe
+    if (agregarGastoTransferencia && !gastosExistentes.some(g => g.tipo_gasto === 'TRANSFERENCIA_PRENDA')) {
+      gastosParaAgregar.push({
+        prestamo_id: prestamo.id,
+        tipo_gasto: 'TRANSFERENCIA_PRENDA',
+        monto: nuevoGastoTransferencia,
+        moneda: formData.moneda,
+        descripcion: 'Gastos de transferencia vehicular y constitución de prenda (agregado posteriormente)',
+        estado: 'PENDIENTE'
+      });
+    }
+
+    // Insertar gastos si hay alguno para agregar
+    if (gastosParaAgregar.length > 0) {
+      const { error: gastosError } = await supabase
+        .from('gastos_prestamo')
+        .insert(gastosParaAgregar);
+
+      if (gastosError) throw gastosError;
+
+      // Recargar gastos existentes
+      await cargarGastosExistentes();
+    }
+
+  } catch (error) {
+    console.error('Error agregando gastos:', error);
+    setError('Error al agregar los gastos al préstamo');
+  }
+};
 
   // Cargar clientes
   const cargarClientes = async () => {
@@ -209,6 +299,8 @@ export function EditarPrestamoDialog({ open, onOpenChange, onConfirm, prestamo }
         }
       }
 
+      await agregarGastosNuevos();
+
       onConfirm();
       handleClose();
       
@@ -230,6 +322,24 @@ export function EditarPrestamoDialog({ open, onOpenChange, onConfirm, prestamo }
       )
     );
   };
+
+  const getDescripcionCorta = (tipo_gasto: string) => {
+  switch (tipo_gasto) {
+    case 'OTORGAMIENTO': return 'Gastos Otorgamiento';
+    case 'TRANSFERENCIA_PRENDA': return 'Gastos Transf. y Prenda';
+    default: return 'Gasto';
+  }
+};
+
+// 9. Función para obtener color del estado
+const getColorEstado = (estado: string) => {
+  switch (estado) {
+    case 'PENDIENTE': return 'bg-yellow-100 text-yellow-800';
+    case 'FACTURADO': return 'bg-blue-100 text-blue-800';
+    case 'COBRADO': return 'bg-green-100 text-green-800';
+    default: return 'bg-gray-100 text-gray-800';
+  }
+};
 
   // Recalcular cuotas
   const recalcularCuotas = () => {
@@ -275,21 +385,28 @@ export function EditarPrestamoDialog({ open, onOpenChange, onConfirm, prestamo }
 
         {/* Navegación */}
         <div className="flex space-x-2 mb-6">
-          <Button
-            variant={activeSection === 'general' ? 'default' : 'outline'}
-            onClick={() => setActiveSection('general')}
-            className="flex-1"
-          >
-            Datos Generales
-          </Button>
-          <Button
-            variant={activeSection === 'cuotas' ? 'default' : 'outline'}
-            onClick={() => setActiveSection('cuotas')}
-            className="flex-1"
-          >
-            Cuotas ({cuotasEditadas.length})
-          </Button>
-        </div>
+        <Button
+          variant={activeSection === 'general' ? 'default' : 'outline'}
+          onClick={() => setActiveSection('general')}
+          className="flex-1"
+        >
+          Datos Generales
+        </Button>
+        <Button
+          variant={activeSection === 'cuotas' ? 'default' : 'outline'}
+          onClick={() => setActiveSection('cuotas')}
+          className="flex-1"
+        >
+          Cuotas ({cuotasEditadas.length})
+        </Button>
+        <Button
+          variant={activeSection === 'gastos' ? 'default' : 'outline'}
+          onClick={() => setActiveSection('gastos')}
+          className="flex-1"
+        >
+          Gastos ({gastosExistentes.length})
+        </Button>
+      </div>
 
         {/* Errores */}
         {error && (
@@ -530,6 +647,158 @@ export function EditarPrestamoDialog({ open, onOpenChange, onConfirm, prestamo }
             </Card>
           </div>
         )}
+
+        {activeSection === 'gastos' && (
+  <div className="space-y-6">
+    <Card>
+      <CardHeader>
+        <CardTitle>Gestión de Gastos del Préstamo</CardTitle>
+        <div className="text-sm text-gray-600">
+          <p>💡 Aquí puede ver y agregar gastos adicionales al préstamo.</p>
+          <p>⚠️ Solo se pueden agregar gastos que no existan previamente.</p>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        
+        {/* Gastos existentes */}
+        {gastosExistentes.length > 0 && (
+          <div>
+            <h4 className="font-semibold mb-3">Gastos Actuales</h4>
+            <div className="space-y-2">
+              {gastosExistentes.map((gasto) => (
+                <div key={gasto.id} className="border border-orange-200 rounded-lg p-4 bg-orange-50">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <div className="font-medium text-orange-800">
+                        {getDescripcionCorta(gasto.tipo_gasto)}
+                      </div>
+                      <div className="text-xs text-orange-600">
+                        Creado: {new Date(gasto.fecha_creacion).toLocaleDateString('es-AR')}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-semibold text-orange-700">
+                        {gasto.moneda === 'Dolar' ? 'US$' : '$'}{gasto.monto.toLocaleString('es-AR')}
+                      </div>
+                      <Badge className={getColorEstado(gasto.estado)}>
+                        {gasto.estado}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Agregar nuevos gastos */}
+        <div>
+          <h4 className="font-semibold mb-3">Agregar Gastos Nuevos</h4>
+          
+          {/* Gasto de otorgamiento */}
+          {!gastosExistentes.some(g => g.tipo_gasto === 'OTORGAMIENTO') && (
+            <div className="border border-green-200 rounded-lg p-4 bg-green-50 mb-4">
+              <div className="flex items-center space-x-3 mb-3">
+                <Checkbox 
+                  id="agregarGastoOtorgamiento"
+                  checked={agregarGastoOtorgamiento}
+                  onCheckedChange={(checked) => setAgregarGastoOtorgamiento(checked as boolean)}
+                />
+                <Label htmlFor="agregarGastoOtorgamiento" className="font-semibold cursor-pointer">
+                  Agregar Gastos de Otorgamiento
+                </Label>
+              </div>
+              
+              {agregarGastoOtorgamiento && (
+                <div className="ml-6 space-y-2">
+                  <Label className="text-sm">Monto:</Label>
+                  <Input
+                    type="number"
+                    value={nuevoGastoOtorgamiento}
+                    onChange={(e) => setNuevoGastoOtorgamiento(parseFloat(e.target.value) || 0)}
+                    placeholder="5000"
+                    min="0"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Gasto de transferencia */}
+          {!gastosExistentes.some(g => g.tipo_gasto === 'TRANSFERENCIA_PRENDA') && (
+            <div className="border border-green-200 rounded-lg p-4 bg-green-50 mb-4">
+              <div className="flex items-center space-x-3 mb-3">
+                <Checkbox 
+                  id="agregarGastoTransferencia"
+                  checked={agregarGastoTransferencia}
+                  onCheckedChange={(checked) => setAgregarGastoTransferencia(checked as boolean)}
+                />
+                <Label htmlFor="agregarGastoTransferencia" className="font-semibold cursor-pointer">
+                  Agregar Gastos de Transferencia y Prenda
+                </Label>
+              </div>
+              
+              {agregarGastoTransferencia && (
+                <div className="ml-6 space-y-2">
+                  <Label className="text-sm">Monto:</Label>
+                  <Input
+                    type="number"
+                    value={nuevoGastoTransferencia}
+                    onChange={(e) => setNuevoGastoTransferencia(parseFloat(e.target.value) || 0)}
+                    placeholder="3000"
+                    min="0"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Mensaje si ya tiene todos los gastos */}
+          {gastosExistentes.length >= 2 && (
+            <div className="text-center py-6 text-slate-500">
+              Este préstamo ya tiene todos los tipos de gastos disponibles.
+            </div>
+          )}
+
+          {/* Resumen de nuevos gastos */}
+          {(agregarGastoOtorgamiento || agregarGastoTransferencia) && (
+            <div className="border-t pt-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h5 className="font-semibold mb-2 text-blue-800">Resumen de Gastos a Agregar:</h5>
+                <div className="space-y-1 text-sm">
+                  {agregarGastoOtorgamiento && (
+                    <div className="flex justify-between">
+                      <span>Gastos de Otorgamiento:</span>
+                      <span className="font-medium">
+                        {formData.moneda === 'Dolar' ? 'US$' : '$'}{nuevoGastoOtorgamiento.toLocaleString('es-AR')}
+                      </span>
+                    </div>
+                  )}
+                  {agregarGastoTransferencia && (
+                    <div className="flex justify-between">
+                      <span>Gastos Transferencia y Prenda:</span>
+                      <span className="font-medium">
+                        {formData.moneda === 'Dolar' ? 'US$' : '$'}{nuevoGastoTransferencia.toLocaleString('es-AR')}
+                      </span>
+                    </div>
+                  )}
+                  <div className="border-t pt-2 font-semibold flex justify-between text-blue-800">
+                    <span>Total a Agregar:</span>
+                    <span>
+                      {formData.moneda === 'Dolar' ? 'US$' : '$'}
+                      {((agregarGastoOtorgamiento ? nuevoGastoOtorgamiento : 0) + 
+                        (agregarGastoTransferencia ? nuevoGastoTransferencia : 0)).toLocaleString('es-AR')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  </div>
+)}
 
         {/* ✅ FOOTER CORREGIDO usando DialogClose */}
         <DialogFooter>
